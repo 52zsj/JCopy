@@ -58,15 +58,16 @@ pub fn save_settings(dir: &PathBuf, settings: &Settings) {
 }
 
 fn default_device_name() -> String {
-    let name = std::process::Command::new("hostname")
+    let raw = std::process::Command::new("hostname")
         .output()
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
 
-    match name {
-        Some(n) => n,
-        None => if cfg!(target_os = "macos") { "Mac" } else { "PC" }.to_string(),
-    }
+    let fallback = if cfg!(target_os = "macos") { "Mac" } else { "PC" }.to_string();
+    let name = raw.unwrap_or(fallback);
+
+    // macOS 主机名常带 .local 后缀，展示时去掉
+    name.strip_suffix(".local").unwrap_or(&name).to_string()
 }

@@ -25,8 +25,14 @@ pub fn bootstrap(state: State<'_, Arc<AppState>>) -> Result<Bootstrap, String> {
             .map_err(|e| e.to_string())?
             .iter()
             .map(|c| c.view())
-            .collect()
+            .collect::<Vec<_>>()
     };
+    eprintln!(
+        "[jcopy] 前端已就绪：{} 条历史，设备「{}」，自动粘贴={}",
+        clips.len(),
+        settings.device_name,
+        settings.auto_paste
+    );
     Ok(Bootstrap {
         settings,
         clips,

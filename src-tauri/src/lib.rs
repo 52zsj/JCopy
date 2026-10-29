@@ -39,6 +39,18 @@ pub fn run() {
             }
 
             clipboard::spawn(handle.clone(), state);
+
+            // 调试开关：启动即展开面板，省得每次按快捷键
+            if std::env::var("JCOPY_SHOW_ON_START").is_ok() {
+                let handle_for_show = handle.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(1200));
+                    ui::show(&handle_for_show);
+                });
+                #[cfg(debug_assertions)]
+                probe_dom(&handle);
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -57,6 +69,9 @@ pub fn run() {
         .on_window_event(|window, event| match event {
             // 点面板外任意位置即收起，这是剪贴板工具的标配行为
             tauri::WindowEvent::Focused(false) => {
+                if ui::recently_shown() {
+                    return;
+                }
                 if std::env::var("JCOPY_NO_AUTOHIDE").is_err() {
                     let _ = window.hide();
                 }
@@ -84,4 +99,34 @@ fn panel_shortcut() -> Shortcut {
     let modifiers = Modifiers::CONTROL | Modifiers::SHIFT;
 
     Shortcut::new(Some(modifiers), Code::KeyV)
+}
+
+/// 仅调试用：读取面板的真实渲染尺寸，确认 CSS 与列表都正常。
+#[cfg(debug_assertions)]
+fn probe_dom(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("panel") else {
+        return;
+    };
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(2600));
+        // 用 hash 回传结果：eval 没有返回值，而 hash 变化不需要导航
+        let script = r#"(() => {
+            const s = document.querySelector('.surface');
+            const n = document.querySelectorAll('.item').length;
+            let out = 'NO_SURFACE';
+            if (s) {
+                const r = s.getBoundingClientRect();
+                out = Math.round(r.width) + 'x' + Math.round(r.height) + '-items-' + n;
+            }
+            location.hash = 'probe=' + out;
+        })()"#;
+        let _ = window.eval(script);
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        let frag = window
+            .url()
+            .ok()
+            .and_then(|u| u.fragment().map(|f| f.to_string()))
+            .unwrap_or_default();
+        eprintln!("[jcopy] DOM 探针: {frag}");
+    });
 }

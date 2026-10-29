@@ -1,4 +1,20 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
+
+/// 最近一次显示面板的时间戳，用于忽略"刚显示就失焦"的假事件
+static LAST_SHOWN_MS: AtomicU64 = AtomicU64::new(0);
+
+fn now_ms() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+pub fn recently_shown() -> bool {
+    now_ms().saturating_sub(LAST_SHOWN_MS.load(Ordering::Relaxed)) < 350
+}
 
 pub fn toggle(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("panel") {
@@ -11,11 +27,29 @@ pub fn toggle(app: &AppHandle) {
 }
 
 pub fn show(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window("panel") {
-        place_bottom_center(&w);
-        let _ = w.show();
-        let _ = w.set_focus();
-        let _ = app.emit("panel-shown", ());
+    let Some(w) = app.get_webview_window("panel") else {
+        eprintln!("[jcopy] 找不到 panel 窗口");
+        return;
+    };
+    place_bottom_center(&w);
+    let _ = w.show();
+    #[cfg(target_os = "macos")]
+    activate_app();
+    let _ = w.set_focus();
+    LAST_SHOWN_MS.store(now_ms(), Ordering::Relaxed);
+    let _ = app.emit("panel-shown", ());
+}
+
+/// Accessory（无 Dock 图标）模式下，必须显式激活应用，否则窗口收不到键盘输入。
+#[cfg(target_os = "macos")]
+fn activate_app() {
+    use cocoa::base::{id, nil};
+    use objc::{class, msg_send, sel, sel_impl};
+    unsafe {
+        let ns_app: id = msg_send![class!(NSApplication), sharedApplication];
+        if ns_app != nil {
+            let _: () = msg_send![ns_app, activateIgnoringOtherApps: true];
+        }
     }
 }
 

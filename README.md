@@ -32,11 +32,14 @@ npm run app:build    # 打安装包
 
 ### 调试时的小开关
 
-面板在失去焦点时会自动收起，这在调试时很不方便。需要让它常驻时：
+面板在失去焦点时会自动收起，这在调试时很不方便。两个环境变量可以帮忙：
 
 ```bash
-JCOPY_NO_AUTOHIDE=1 npm run app
+JCOPY_NO_AUTOHIDE=1 npm run app   # 失焦不隐藏
+JCOPY_SHOW_ON_START=1 npm run app # 启动即展开面板
 ```
+
+两者可以叠加。生产构建下 `JCOPY_SHOW_ON_START` 仍可用（便于排查用户环境），`JCOPY_NO_AUTOHIDE` 只在调试时用。
 
 ## 快捷键
 

@@ -29,7 +29,8 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             }
             "clear" => {
                 let state = app.state::<Arc<AppState>>();
-                if let Ok(conn) = state.db.lock() {
+                {
+                    let conn = state.db.lock().unwrap();
                     let _ = crate::db::clear(&conn);
                 }
             }

@@ -34,7 +34,7 @@ pub fn frontmost_app() -> Option<String> {
 }
 
 #[cfg(target_os = "macos")]
-pub use mac_paste as paste_impl;
+use mac_paste as paste_impl;
 
 #[cfg(target_os = "macos")]
 mod mac_paste {
@@ -93,7 +93,7 @@ mod mac_paste {
 }
 
 #[cfg(target_os = "windows")]
-pub use win_paste as paste_impl;
+use win_paste as paste_impl;
 
 #[cfg(target_os = "windows")]
 mod win_paste {
@@ -154,7 +154,7 @@ pub fn paste() -> Result<(), String> {
 }
 
 #[cfg(target_os = "linux")]
-pub use linux_paste as paste_impl;
+use linux_paste as paste_impl;
 
 #[cfg(target_os = "linux")]
 mod linux_paste {
