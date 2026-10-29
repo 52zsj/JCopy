@@ -1,0 +1,360 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { api, type ClipView, type Settings } from "./api";
+import { appLabel, humanBytes, relativeTime } from "./format";
+
+export default function App() {
+  const [clips, setClips] = useState<ClipView[]>([]);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [paused, setPaused] = useState(false);
+  const [canPaste, setCanPaste] = useState(false);
+  const [query, setQuery] = useState("");
+  const [pinnedOnly, setPinnedOnly] = useState(false);
+  const [active, setActive] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const activeRef = useRef<HTMLDivElement>(null);
+
+  const refresh = useCallback(async () => {
+    const data = await api.bootstrap();
+    setClips(data.clips);
+    setSettings(data.settings);
+    setPaused(data.paused);
+    setCanPaste(data.canPaste);
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const unlisteners: Array<() => void> = [];
+    let disposed = false;
+
+    void (async () => {
+      const added = await listen<ClipView>("clip-added", (event) => {
+        setClips((prev) => [event.payload, ...prev.filter((c) => c.id !== event.payload.id)]);
+      });
+      const touched = await listen<string>("clip-touched", (event) => {
+        setClips((prev) => {
+          const target = prev.find((c) => c.id === event.payload);
+          if (!target) return prev;
+          return [target, ...prev.filter((c) => c.id !== event.payload)];
+        });
+      });
+      const shown = await listen("panel-shown", () => {
+        setQuery("");
+        setPinnedOnly(false);
+        setActive(0);
+        setSettingsOpen(false);
+        setToast(null);
+        requestAnimationFrame(() => inputRef.current?.focus());
+      });
+
+      if (disposed) {
+        added();
+        touched();
+        shown();
+      } else {
+        unlisteners.push(added, touched, shown);
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      unlisteners.forEach((fn) => fn());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 3200);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return clips.filter((clip) => {
+      if (pinnedOnly && !clip.pinned) return false;
+      if (!q) return true;
+      if (clip.preview.toLowerCase().includes(q)) return true;
+      return appLabel(clip.sourceApp).toLowerCase().includes(q);
+    });
+  }, [clips, query, pinnedOnly]);
+
+  useEffect(() => {
+    setActive((index) => Math.min(index, Math.max(0, filtered.length - 1)));
+  }, [filtered.length]);
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: "nearest" });
+  }, [active]);
+
+  const paste = useCallback(async (id: string) => {
+    try {
+      await api.copyClip(id);
+    } catch (error) {
+      setToast(typeof error === "string" ? error : "粘贴失败");
+    }
+  }, []);
+
+  const togglePin = useCallback(async (id: string) => {
+    const pinned = await api.togglePin(id);
+    setClips((prev) => prev.map((c) => (c.id === id ? { ...c, pinned } : c)));
+  }, []);
+
+  const removeClip = useCallback(async (id: string) => {
+    await api.deleteClip(id);
+    setClips((prev) => prev.filter((c) => c.id !== id));
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
+      const mod = event.metaKey || event.ctrlKey;
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (settingsOpen) {
+          setSettingsOpen(false);
+          requestAnimationFrame(() => inputRef.current?.focus());
+        } else {
+          void api.hidePanel();
+        }
+        return;
+      }
+
+      if (settingsOpen) return;
+
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setActive((i) => Math.min(i + 1, filtered.length - 1));
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setActive((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        const target = filtered[active];
+        if (target) void paste(target.id);
+        return;
+      }
+
+      const current = filtered[active];
+      if (!current) return;
+
+      if (mod && /^[1-9]$/.test(event.key)) {
+        event.preventDefault();
+        const target = filtered[Number(event.key) - 1];
+        if (target) void paste(target.id);
+        return;
+      }
+      if (mod && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        void togglePin(current.id);
+        return;
+      }
+      if (mod && (event.key === "Backspace" || event.key === "Delete")) {
+        event.preventDefault();
+        void removeClip(current.id);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [active, filtered, paste, removeClip, settingsOpen, togglePin]);
+
+  const patchSettings = useCallback(
+    async (patch: Partial<Settings>) => {
+      if (!settings) return;
+      const next = { ...settings, ...patch };
+      setSettings(next);
+      await api.updateSettings(next);
+    },
+    [settings],
+  );
+
+  const toggleAutoPaste = useCallback(async () => {
+    if (!settings) return;
+    if (!settings.autoPaste && !canPaste) {
+      setToast("需要先授予「辅助功能」权限");
+      await api.openAccessibility();
+      return;
+    }
+    await patchSettings({ autoPaste: !settings.autoPaste });
+  }, [canPaste, patchSettings, settings]);
+
+  const togglePaused = useCallback(async () => {
+    const next = await api.setPaused(!paused);
+    setPaused(next);
+  }, [paused]);
+
+  const deviceName = settings?.deviceName ?? "";
+
+  return (
+    <div className="app">
+      <div className="surface">
+        {settingsOpen ? (
+          <div className="settings">
+            <div className="settings-head">
+              <span>设置</span>
+              <button
+                className="ghost"
+                onClick={() => {
+                  setSettingsOpen(false);
+                  requestAnimationFrame(() => inputRef.current?.focus());
+                }}
+              >
+                完成
+              </button>
+            </div>
+
+            <div className="settings-body">
+              <label className="field">
+                <span className="field-label">设备名称</span>
+                <input
+                  value={deviceName}
+                  onChange={(e) => void patchSettings({ deviceName: e.target.value })}
+                  placeholder="这台设备的名字"
+                />
+              </label>
+
+              <button className="row" onClick={() => void toggleAutoPaste()}>
+                <span>
+                  自动粘贴
+                  <em>{canPaste ? "选中后直接送入前台应用" : "需授予系统辅助功能权限"}</em>
+                </span>
+                <Switch on={settings?.autoPaste ?? false} />
+              </button>
+
+              <button className="row" onClick={() => void togglePaused()}>
+                <span>
+                  暂停监听
+                  <em>{paused ? "当前不会记录任何复制内容" : "正在记录剪贴板变化"}</em>
+                </span>
+                <Switch on={paused} />
+              </button>
+
+              <div className="row static">
+                <span>
+                  历史规模
+                  <em>
+                    {clips.length} 条 · 上限 {settings?.maxClips ?? 0} 条 /{" "}
+                    {humanBytes(settings?.maxBytes ?? 0)}
+                  </em>
+                </span>
+              </div>
+
+              <button
+                className="row danger"
+                onClick={async () => {
+                  await api.clearAll();
+                  setClips([]);
+                  setToast("已清空本机历史");
+                }}
+              >
+                <span>
+                  清空历史
+                  <em>仅清除本机，不影响其他设备</em>
+                </span>
+              </button>
+
+              <button className="row" onClick={() => void refresh()}>
+                <span>
+                  重新检测权限
+                  <em>{canPaste ? "辅助功能已授权" : "尚未授权"}</em>
+                </span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="search-row">
+              <svg className="icon-search" viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="7" cy="7" r="4.6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+                <path d="M10.4 10.4L13.6 13.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              </svg>
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setActive(0);
+                }}
+                placeholder="搜索剪贴板…"
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <button
+                className={`chip ${pinnedOnly ? "on" : ""}`}
+                onClick={() => {
+                  setPinnedOnly((v) => !v);
+                  setActive(0);
+                }}
+              >
+                固定
+              </button>
+            </div>
+
+            <div className="list">
+              {filtered.length === 0 ? (
+                <div className="empty">
+                  <div className="empty-title">{query ? `没有匹配「${query}」` : "还没有记录"}</div>
+                  <div className="empty-hint">
+                    {query ? "试试更短的关键词" : "复制点什么，它会出现在这里"}
+                  </div>
+                </div>
+              ) : (
+                filtered.map((clip, index) => (
+                  <div
+                    key={clip.id}
+                    ref={index === active ? activeRef : undefined}
+                    className={`item ${index === active ? "active" : ""} ${clip.pinned ? "pinned" : ""}`}
+                    onMouseEnter={() => setActive(index)}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => void paste(clip.id)}
+                  >
+                    <div className="preview">{clip.preview}</div>
+                    <div className="meta">
+                      <span className="app">{appLabel(clip.sourceApp)}</span>
+                      <span className="sep">·</span>
+                      <span className={clip.device && clip.device !== deviceName ? "device remote" : "device"}>
+                        {clip.device && clip.device !== deviceName ? `来自 ${clip.device}` : "本机"}
+                      </span>
+                      <span className="sep">·</span>
+                      <span className="time">{relativeTime(clip.createdAt)}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="footer">
+              <span className={`status ${paused ? "warn" : ""}`}>
+                {paused ? "已暂停监听" : `${clips.length} 条记录`}
+              </span>
+              <span className="hint">
+                <kbd>↑</kbd>
+                <kbd>↓</kbd> 选择 <kbd>↵</kbd> 粘贴 <kbd>⌘P</kbd> 固定
+              </span>
+              <button className="ghost" onClick={() => setSettingsOpen(true)}>
+                设置
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+function Switch({ on }: { on: boolean }) {
+  return <span className={`switch ${on ? "on" : ""}`} aria-hidden="true" />;
+}

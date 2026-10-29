@@ -1,0 +1,117 @@
+use serde::{Deserialize, Serialize};
+
+/// 发给前端的轻量视图：不含全文，避免面板加载时传输大量文本。
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipView {
+    pub id: String,
+    pub kind: String,
+    pub preview: String,
+    pub source_app: Option<String>,
+    pub device: String,
+    pub created_at: i64,
+    pub last_used_at: i64,
+    pub pinned: bool,
+    pub bytes: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct Clip {
+    pub id: String,
+    pub kind: String,
+    pub content: String,
+    pub hash: String,
+    pub source_app: Option<String>,
+    pub device: String,
+    pub created_at: i64,
+    pub last_used_at: i64,
+    pub pinned: bool,
+    pub bytes: i64,
+}
+
+impl Clip {
+    pub fn view(&self) -> ClipView {
+        ClipView {
+            id: self.id.clone(),
+            kind: self.kind.clone(),
+            preview: preview_of(&self.content),
+            source_app: self.source_app.clone(),
+            device: self.device.clone(),
+            created_at: self.created_at,
+            last_used_at: self.last_used_at,
+            pinned: self.pinned,
+            bytes: self.bytes,
+        }
+    }
+}
+
+const PREVIEW_MAX_CHARS: usize = 400;
+
+/// 单行预览：折叠所有空白，超长截断。前端据此渲染卡片首行。
+pub fn preview_of(text: &str) -> String {
+    let mut out = String::with_capacity(PREVIEW_MAX_CHARS);
+    let mut last_space = false;
+    for ch in text.chars() {
+        if out.chars().count() >= PREVIEW_MAX_CHARS {
+            out.push('…');
+            break;
+        }
+        if ch.is_whitespace() {
+            if !last_space && !out.is_empty() {
+                out.push(' ');
+                last_space = true;
+            }
+        } else {
+            out.push(ch);
+            last_space = false;
+        }
+    }
+    out.trim_end().to_string()
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Settings {
+    pub device_id: String,
+    pub device_name: String,
+    /// 关闭时仅写回剪贴板，用户自行 Cmd+V
+    pub auto_paste: bool,
+    pub max_clips: i64,
+    /// 字节上限，默认 200MB
+    pub max_bytes: i64,
+    pub hotkey: String,
+    pub sync_enabled: bool,
+    /// 不记录复制内容的应用（bundle id / 进程名）
+    pub blacklist: Vec<String>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            device_id: String::new(),
+            device_name: String::new(),
+            auto_paste: false,
+            max_clips: 1000,
+            max_bytes: 200 * 1024 * 1024,
+            hotkey: "CommandOrControl+Shift+V".into(),
+            sync_enabled: true,
+            blacklist: default_blacklist(),
+        }
+    }
+}
+
+/// 内置建议名单（首次启动带出，用户可自行增删）。
+fn default_blacklist() -> Vec<String> {
+    [
+        "com.1password.1password",
+        "com.agilebits.onepassword7",
+        "com.bitwarden.desktop",
+        "com.apple.keychainaccess",
+        "org.keepassxc.keepassxc",
+        "me.proton.pass",
+        "com.lastpass.LastPass",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}

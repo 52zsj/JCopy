@@ -1,0 +1,87 @@
+mod clipboard;
+mod commands;
+mod db;
+mod model;
+mod platform;
+mod state;
+mod tray;
+mod ui;
+
+use std::sync::Arc;
+use tauri::Manager;
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == ShortcutState::Pressed {
+                        ui::toggle(app);
+                    }
+                })
+                .build(),
+        )
+        .setup(|app| {
+            let handle = app.handle().clone();
+
+            let state = Arc::new(state::init(&handle)?);
+            app.manage(state.clone());
+
+            // 菜单栏常驻：无 Dock 图标
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            tray::build(&handle)?;
+
+            if let Err(e) = handle.global_shortcut().register(panel_shortcut()) {
+                eprintln!("[jcopy] 全局快捷键注册失败（可能被其他应用占用）: {e}");
+            }
+
+            clipboard::spawn(handle.clone(), state);
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::bootstrap,
+            commands::list_clips,
+            commands::copy_clip,
+            commands::delete_clip,
+            commands::clear_all,
+            commands::toggle_pin,
+            commands::update_settings,
+            commands::set_paused,
+            commands::hide_panel,
+            commands::open_accessibility_settings,
+            commands::open_config_dir,
+        ])
+        .on_window_event(|window, event| match event {
+            // 点面板外任意位置即收起，这是剪贴板工具的标配行为
+            tauri::WindowEvent::Focused(false) => {
+                if std::env::var("JCOPY_NO_AUTOHIDE").is_err() {
+                    let _ = window.hide();
+                }
+            }
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+            _ => {}
+        })
+        .build(tauri::generate_context!())
+        .expect("JCopy 初始化失败")
+        .run(|_app, event| {
+            // 关窗不退出，常驻菜单栏
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                api.prevent_exit();
+            }
+        });
+}
+
+fn panel_shortcut() -> Shortcut {
+    #[cfg(target_os = "macos")]
+    let modifiers = Modifiers::SUPER | Modifiers::SHIFT;
+    #[cfg(not(target_os = "macos"))]
+    let modifiers = Modifiers::CONTROL | Modifiers::SHIFT;
+
+    Shortcut::new(Some(modifiers), Code::KeyV)
+}
