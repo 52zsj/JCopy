@@ -55,31 +55,49 @@ body {
 .app {
   position: relative;
   height: 100%;
-  padding: 18px;
+  /* 底部不留白：抽屉要真正贴住屏幕底边 */
+  padding: 18px 18px 0;
 }
 
 .surface {
+  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-radius: 14px;
+  /* 只有顶部圆角，底部与屏幕齐平，看起来才是"抽屉" */
+  border-radius: 16px 16px 0 0;
   background: var(--surface);
   border: 1px solid var(--border);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-bottom: none;
+  box-shadow: 0 -12px 44px rgba(0, 0, 0, 0.2), 0 -1px 3px rgba(0, 0, 0, 0.06);
   overflow: hidden;
   backdrop-filter: blur(24px) saturate(180%);
-  animation: rise 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: rise 170ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.996);
+    transform: translateY(32px);
   }
   to {
     opacity: 1;
     transform: none;
   }
+}
+
+/* 抽屉把手：纯装饰，提示"这是从底下拉出来的" */
+.grabber {
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  pointer-events: none;
+  z-index: 2;
 }
 
 .search-row {
@@ -142,9 +160,15 @@ body {
   width: 0;
 }
 
+/* 抽屉是宽而扁的：每行改成横向排列，内容在左、元信息右对齐，
+   宽屏下不浪费横向空间，扫视时时间和来源也对得成一列 */
 .item {
   position: relative;
-  padding: 9px 12px 9px 13px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 42px;
+  padding: 0 12px 0 13px;
   border-radius: 9px;
   margin-bottom: 1px;
   transition: background 80ms ease;
@@ -162,14 +186,16 @@ body {
   content: "";
   position: absolute;
   left: 4px;
-  top: 9px;
-  bottom: 9px;
+  top: 8px;
+  bottom: 8px;
   width: 2px;
   border-radius: 1px;
   background: var(--accent);
 }
 
 .preview {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   line-height: 1.4;
   color: var(--text);
@@ -179,10 +205,12 @@ body {
 }
 
 .meta {
-  margin-top: 3px;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 5px;
+  min-width: 210px;
   font-size: 11px;
   color: var(--text-dim);
 }
@@ -540,4 +568,20 @@ mark {
   mark {
     background: rgba(91, 134, 255, 0.35);
   }
+}
+
+/* 抽屉变宽后，设置页单列会拉得过长，限制阅读宽度并居中 */
+.settings-body {
+  width: 100%;
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+.settings-head {
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+.list {
+  padding: 8px 10px 12px;
 }

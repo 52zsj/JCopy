@@ -279,6 +279,7 @@ export default function App() {
   return (
     <div className="app">
       <div className="surface">
+        <div className="grabber" aria-hidden="true" />
         {settingsOpen ? (
           <div className="settings">
             <div className="settings-head">
