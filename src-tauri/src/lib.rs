@@ -4,6 +4,7 @@ mod db;
 mod model;
 mod platform;
 mod state;
+mod sync;
 mod tray;
 mod ui;
 
@@ -38,7 +39,8 @@ pub fn run() {
                 eprintln!("[jcopy] 全局快捷键注册失败（可能被其他应用占用）: {e}");
             }
 
-            clipboard::spawn(handle.clone(), state);
+            clipboard::spawn(handle.clone(), state.clone());
+            sync::engine::spawn(handle.clone(), state);
 
             // 调试开关：启动即展开面板，省得每次按快捷键
             if std::env::var("JCOPY_SHOW_ON_START").is_ok() {
@@ -65,6 +67,13 @@ pub fn run() {
             commands::hide_panel,
             commands::open_accessibility_settings,
             commands::open_config_dir,
+            commands::sync_status,
+            commands::sync_set_dir,
+            commands::sync_set_enabled,
+            commands::sync_create_invite,
+            commands::sync_join,
+            commands::sync_now,
+            commands::sync_reset,
         ])
         .on_window_event(|window, event| match event {
             // 点面板外任意位置即收起，这是剪贴板工具的标配行为

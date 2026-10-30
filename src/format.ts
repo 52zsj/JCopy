@@ -60,3 +60,16 @@ export function humanBytes(n: number): string {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
+
+export function platformName(p: string): string {
+  switch (p) {
+    case "macos":
+      return "macOS";
+    case "windows":
+      return "Windows";
+    case "linux":
+      return "Linux";
+    default:
+      return p || "未知系统";
+  }
+}

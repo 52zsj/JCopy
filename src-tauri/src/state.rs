@@ -1,4 +1,6 @@
 use rusqlite::Connection;
+use serde::Serialize;
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -7,6 +9,34 @@ use tauri::{AppHandle, Manager};
 
 use crate::db;
 use crate::model::Settings;
+use crate::sync::crypto::Key;
+
+/// 一台已配对设备在最近一次扫描中的状态。
+#[derive(Serialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PeerStatus {
+    pub id: String,
+    pub name: String,
+    pub platform: String,
+    /// 对端发件箱的更新时间（毫秒）
+    pub updated_at: i64,
+    /// 我们在本轮从该设备实际接收到的条数
+    pub received: usize,
+    pub online: bool,
+}
+
+#[derive(Default)]
+pub struct SyncRuntime {
+    pub enabled: bool,
+    pub key: Option<Key>,
+    pub dir: Option<PathBuf>,
+    /// 上次写入的密文哈希，用于避免无变化的重复写盘（iCloud 对高频小文件写入有节流）
+    pub last_push_hash: String,
+    pub last_push_at: i64,
+    pub last_pull_at: i64,
+    pub last_error: Option<String>,
+    pub peers: HashMap<String, PeerStatus>,
+}
 
 pub struct AppState {
     pub db: Mutex<Connection>,
@@ -15,6 +45,7 @@ pub struct AppState {
     /// 由 JCopy 自己写回剪贴板的内容，监听线程需跳过，避免自我回环。
     pub ignore_hash: Mutex<Option<String>>,
     pub config_dir: PathBuf,
+    pub sync: Mutex<SyncRuntime>,
 }
 
 pub fn init(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
@@ -34,12 +65,20 @@ pub fn init(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     fs::create_dir_all(&data_dir)?;
     let conn = db::open(&data_dir.join("jcopy.db"))?;
 
+    let sync = SyncRuntime {
+        enabled: settings.sync_enabled,
+        key: settings.sync_key.as_deref().and_then(decode_key),
+        dir: Some(settings.sync_dir.clone().map(PathBuf::from).unwrap_or_else(default_sync_dir)),
+        ..Default::default()
+    };
+
     Ok(AppState {
         db: Mutex::new(conn),
         settings: Mutex::new(settings),
         paused: AtomicBool::new(false),
         ignore_hash: Mutex::new(None),
         config_dir,
+        sync: Mutex::new(sync),
     })
 }
 
@@ -53,8 +92,55 @@ pub fn load_settings(dir: &PathBuf) -> Settings {
 
 pub fn save_settings(dir: &PathBuf, settings: &Settings) {
     if let Ok(json) = serde_json::to_string_pretty(settings) {
-        let _ = fs::write(dir.join("settings.json"), json);
+        let path = dir.join("settings.json");
+        let _ = fs::write(&path, json);
+        // 里面含有同步主密钥，收紧到仅本人可读
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+        }
     }
+}
+
+/// 默认同步目录：优先 iCloud Drive，找不到就退到用户主目录下的一个可见文件夹。
+pub fn default_sync_dir() -> PathBuf {
+    if let Some(dir) = detect_icloud_dir() {
+        return dir;
+    }
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".into());
+    PathBuf::from(home).join("JCopy")
+}
+
+pub fn detect_icloud_dir() -> Option<PathBuf> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()?;
+    let home = PathBuf::from(home);
+
+    let candidates = [
+        // macOS iCloud Drive 容器
+        home.join("Library/Mobile Documents/com~apple~CloudDocs"),
+        // Windows iCloud for Windows（新版无空格，旧版有空格）
+        home.join("iCloudDrive"),
+        home.join("iCloud Drive"),
+    ];
+
+    candidates.into_iter().find(|p| p.is_dir())
+}
+
+fn decode_key(b64: &str) -> Option<Key> {
+    use base64::engine::general_purpose::STANDARD as B64;
+    use base64::Engine;
+    let bytes = B64.decode(b64).ok()?;
+    if bytes.len() != 32 {
+        return None;
+    }
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&bytes);
+    Some(key)
 }
 
 fn default_device_name() -> String {

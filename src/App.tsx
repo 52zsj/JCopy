@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { api, type ClipView, type Settings } from "./api";
-import { appLabel, humanBytes, relativeTime } from "./format";
+import { api, type ClipView, type InviteInfo, type Settings, type SyncStatus } from "./api";
+import { appLabel, humanBytes, platformName, relativeTime } from "./format";
 
 export default function App() {
   const [clips, setClips] = useState<ClipView[]>([]);
@@ -13,6 +13,10 @@ export default function App() {
   const [active, setActive] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [sync, setSync] = useState<SyncStatus | null>(null);
+  const [invite, setInvite] = useState<InviteInfo | null>(null);
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [joinCode, setJoinCode] = useState("");
 
   const inputRef = useRef<HTMLInputElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
@@ -169,6 +173,67 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [active, filtered, paste, removeClip, settingsOpen, togglePin]);
 
+  // 设置页打开时才轮询同步状态，关闭即停
+  useEffect(() => {
+    if (!settingsOpen) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const next = await api.syncStatus();
+        if (alive) setSync(next);
+      } catch {
+        // 同步状态读不到不影响本机使用
+      }
+    };
+    void load();
+    const timer = setInterval(load, 3000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [settingsOpen]);
+
+  const createInvite = useCallback(async () => {
+    try {
+      setInvite(await api.syncCreateInvite());
+    } catch (error) {
+      setToast(typeof error === "string" ? error : "生成配对码失败");
+    }
+  }, []);
+
+  const joinWithCode = useCallback(async () => {
+    try {
+      const name = await api.syncJoin(joinCode);
+      setJoinOpen(false);
+      setJoinCode("");
+      setInvite(null);
+      setToast(`已连接到 ${name}`);
+      setSync(await api.syncStatus());
+    } catch (error) {
+      setToast(typeof error === "string" ? error : "配对失败");
+    }
+  }, [joinCode]);
+
+  const runSyncNow = useCallback(async () => {
+    try {
+      await api.syncNow();
+      setSync(await api.syncStatus());
+      setToast("已同步");
+    } catch (error) {
+      setToast(typeof error === "string" ? error : "同步失败");
+    }
+  }, []);
+
+  const resetSync = useCallback(async () => {
+    try {
+      await api.syncReset();
+      setSync(await api.syncStatus());
+      setToast("已解除配对");
+    } catch (error) {
+      setToast(typeof error === "string" ? error : "操作失败");
+    }
+  }, []);
+
   const patchSettings = useCallback(
     async (patch: Partial<Settings>) => {
       if (!settings) return;
@@ -263,6 +328,100 @@ export default function App() {
                   <em>仅清除本机，不影响其他设备</em>
                 </span>
               </button>
+
+              <div className="group-title">跨设备同步</div>
+
+              {invite && (
+                <div className="invite-card">
+                  <div className="invite-code">{invite.code}</div>
+                  <div className="invite-hint">
+                    在另一台设备的 JCopy 里选「输入配对码」，10 分钟内有效
+                  </div>
+                </div>
+              )}
+
+              {joinOpen && (
+                <div className="join-row">
+                  <input
+                    value={joinCode}
+                    onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="输入 6 位配对码"
+                    inputMode="numeric"
+                    autoFocus
+                  />
+                  <button
+                    className="ghost"
+                    onClick={() => void joinWithCode()}
+                    disabled={joinCode.length !== 6}
+                  >
+                    连接
+                  </button>
+                </div>
+              )}
+
+              {sync?.peers.map((peer) => (
+                <div className="row static" key={peer.id}>
+                  <span>
+                    {peer.name}
+                    <em>
+                      {platformName(peer.platform)} ·{" "}
+                      {peer.updatedAt ? relativeTime(peer.updatedAt) : "等待首轮同步"}
+                    </em>
+                  </span>
+                  <span className="peer-dot" />
+                </div>
+              ))}
+
+              {!sync?.paired ? (
+                <>
+                  <button className="row" onClick={() => void createInvite()}>
+                    <span>
+                      生成配对码
+                      <em>让另一台设备输入这个码</em>
+                    </span>
+                    <span className="chev">→</span>
+                  </button>
+                  <button
+                    className="row"
+                    onClick={() => {
+                      setJoinOpen((v) => !v);
+                      setInvite(null);
+                    }}
+                  >
+                    <span>
+                      输入配对码
+                      <em>已有设备生成了码？在这里输入</em>
+                    </span>
+                    <span className="chev">→</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button className="row" onClick={() => void runSyncNow()}>
+                    <span>
+                      立即同步
+                      <em>
+                        {sync.lastPullAt
+                          ? `上次同步 ${relativeTime(sync.lastPullAt)}`
+                          : "尚未同步过"}
+                      </em>
+                    </span>
+                  </button>
+                  <button className="row danger" onClick={() => void resetSync()}>
+                    <span>
+                      解除配对
+                      <em>清除本机同步密钥，已复制的历史不受影响</em>
+                    </span>
+                  </button>
+                </>
+              )}
+
+              <div className="sync-dir">
+                <span className={sync?.dirExists ? "" : "bad"}>
+                  {sync?.isIcloud ? "iCloud 云盘" : "同步目录"}：{sync?.dir ?? "检测中…"}
+                </span>
+                {sync?.lastError && <span className="bad">{sync.lastError}</span>}
+              </div>
 
               <button className="row" onClick={() => void refresh()}>
                 <span>

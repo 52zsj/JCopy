@@ -108,6 +108,56 @@ pub fn insert_or_touch(
     Ok(InsertOutcome::Created(clip))
 }
 
+/// 同步去重用：只看哈希是否已存在，避免命中时被"顶到最前"。
+pub fn has_hash(conn: &Connection, hash: &str) -> bool {
+    conn.query_row("SELECT 1 FROM clips WHERE hash = ?1", [hash], |_| Ok(()))
+        .is_ok()
+}
+
+/// 同步进来的条目：保留对端原始时间；已存在时完全不碰（不置顶、不改时间），
+/// 否则每轮扫描都会把同一条顶上来。
+pub fn insert_remote(
+    conn: &Connection,
+    text: &str,
+    source_app: Option<&str>,
+    device: &str,
+    hash: &str,
+    created_at: i64,
+) -> rusqlite::Result<Option<Clip>> {
+    if has_hash(conn, hash) {
+        return Ok(None);
+    }
+    let id = new_id();
+    let now = now_ms();
+    conn.execute(
+        "INSERT INTO clips (id, kind, content, hash, preview, source_app, device, created_at, last_used_at, pinned, bytes)
+         VALUES (?1, 'text', ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9)",
+        params![
+            &id,
+            text,
+            hash,
+            preview_of(text),
+            source_app,
+            device,
+            created_at,
+            now,
+            text.len() as i64
+        ],
+    )?;
+    Ok(Some(Clip {
+        id,
+        kind: "text".into(),
+        content: text.to_string(),
+        hash: hash.to_string(),
+        source_app: source_app.map(str::to_string),
+        device: device.to_string(),
+        created_at,
+        last_used_at: now,
+        pinned: false,
+        bytes: text.len() as i64,
+    }))
+}
+
 pub fn list(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<Clip>> {
     let mut stmt = conn.prepare(
         "SELECT id, kind, content, hash, source_app, device, created_at, last_used_at, pinned, bytes

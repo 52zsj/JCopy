@@ -20,6 +20,8 @@ export type Settings = {
   maxBytes: number;
   hotkey: string;
   syncEnabled: boolean;
+  syncKey: string | null;
+  syncDir: string | null;
   blacklist: string[];
 };
 
@@ -28,6 +30,35 @@ export type Bootstrap = {
   clips: ClipView[];
   paused: boolean;
   canPaste: boolean;
+};
+
+export type PeerStatus = {
+  id: string;
+  name: string;
+  platform: string;
+  updatedAt: number;
+  received: number;
+  online: boolean;
+};
+
+export type SyncStatus = {
+  enabled: boolean;
+  paired: boolean;
+  dir: string;
+  dirExists: boolean;
+  isIcloud: boolean;
+  deviceId: string;
+  deviceName: string;
+  peers: PeerStatus[];
+  lastPushAt: number;
+  lastPullAt: number;
+  lastError: string | null;
+};
+
+export type InviteInfo = {
+  code: string;
+  expiresAt: number;
+  path: string;
 };
 
 export const api = {
@@ -40,4 +71,12 @@ export const api = {
   setPaused: (paused: boolean) => invoke<boolean>("set_paused", { paused }),
   hidePanel: () => invoke<void>("hide_panel"),
   openAccessibility: () => invoke<void>("open_accessibility_settings"),
+
+  syncStatus: () => invoke<SyncStatus>("sync_status"),
+  syncSetDir: (path: string) => invoke<void>("sync_set_dir", { path }),
+  syncSetEnabled: (enabled: boolean) => invoke<void>("sync_set_enabled", { enabled }),
+  syncCreateInvite: () => invoke<InviteInfo>("sync_create_invite"),
+  syncJoin: (code: string) => invoke<string>("sync_join", { code }),
+  syncNow: () => invoke<void>("sync_now"),
+  syncReset: () => invoke<void>("sync_reset"),
 };

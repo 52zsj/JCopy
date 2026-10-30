@@ -23,6 +23,10 @@ sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
 arboard = "3"
+aes-gcm = "0.10"
+argon2 = "0.5"
+hkdf = "0.12"
+base64 = "0.22"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"
