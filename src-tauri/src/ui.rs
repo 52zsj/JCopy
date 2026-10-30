@@ -110,9 +110,12 @@ fn layout_drawer(w: &WebviewWindow, height: f64) {
 
 /// 直接对 NSWindow 调 `setFrame:display:`。
 ///
-/// Tauri 的 `set_size` / `set_position` 是投递到主线程的，两次调用之间窗口会短暂处于
-/// "新尺寸 + 旧位置"的状态；两块屏宽度不同时，那一瞬间窗口横跨两块屏各露半截，
+/// Tauri 的 `set_size` / `set_position` 是投递到主线程的两次独立调用，中间存在
+/// "新尺寸 + 旧位置"的中间态；两块屏宽度不同时，窗口横跨两块屏各露半截，
 /// 看起来就是先闪一下再缩一下才跑到目标屏。一次 setFrame 没有这个中间态。
+///
+/// AppKit 的几何操作必须在主线程，所以先 `run_on_main_thread` 投递，
+/// 再在 channel 上等它做完——否则 `show()` 会抢在 setFrame 前面。
 #[cfg(target_os = "macos")]
 fn place_with_ns_window(
     w: &WebviewWindow,
@@ -122,30 +125,40 @@ fn place_with_ns_window(
     height: f64,
     primary_top: f64,
 ) -> bool {
-    use cocoa::base::id;
-    use cocoa::foundation::{NSPoint, NSRect, NSSize};
-    use objc::{msg_send, sel, sel_impl};
-
     let Ok(ptr) = w.ns_window() else {
         return false;
     };
     if ptr.is_null() {
         return false;
     }
-    let ns_window = ptr as id;
 
-    unsafe {
-        // NSWindow 的 frame 是 Cocoa 坐标（左下原点、y 向上）
-        let y_cocoa = primary_top - (y_top + height);
-        // 先塌到目标屏底部一个 8×8 的点：即便中间被渲染了一帧，也只出现在目标屏的角落，
-        // 而不是"带着旧尺寸停在旧屏幕上"
-        let tiny = NSRect::new(NSPoint::new(x, y_cocoa), NSSize::new(8.0, 8.0));
-        let _: () = msg_send![ns_window, setFrame: tiny display: false];
+    let address = ptr as usize;
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
 
-        let frame = NSRect::new(NSPoint::new(x, y_cocoa), NSSize::new(width, height));
-        let _: () = msg_send![ns_window, setFrame: frame display: false];
-        true
+    let dispatched = w.run_on_main_thread(move || {
+        use cocoa::base::id;
+        use cocoa::foundation::{NSPoint, NSRect, NSSize};
+        use objc::{msg_send, sel, sel_impl};
+
+        let ns_window = address as id;
+        unsafe {
+            // NSWindow 的 frame 是 Cocoa 坐标（左下原点、y 向上）
+            let y_cocoa = primary_top - (y_top + height);
+            // 先塌到目标屏底部一个 8×8 的点：即便中间被渲染了一帧，也只出现在目标屏的角落
+            let tiny = NSRect::new(NSPoint::new(x, y_cocoa), NSSize::new(8.0, 8.0));
+            let _: () = msg_send![ns_window, setFrame: tiny display: false];
+
+            let frame = NSRect::new(NSPoint::new(x, y_cocoa), NSSize::new(width, height));
+            let _: () = msg_send![ns_window, setFrame: frame display: false];
+        }
+        let _ = tx.send(());
+    });
+
+    if dispatched.is_err() {
+        return false;
     }
+    // 等主线程真的做完，才允许继续 show()
+    rx.recv_timeout(std::time::Duration::from_millis(300)).is_ok()
 }
 
 /// 最小 → 定位 → 最终尺寸。窗口此刻是隐藏的，中间的极小尺寸不可见。
