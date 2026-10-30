@@ -1,13 +1,13 @@
 use std::sync::atomic::{AtomicU64, Ordering};
-use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewWindow};
+use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewWindow};
 
 /// 最近一次显示面板的时间戳，用于忽略"刚显示就失焦"的假事件
 static LAST_SHOWN_MS: AtomicU64 = AtomicU64::new(0);
 
 /// 横向卡片条的高度（逻辑像素）：工具栏 + 一行卡片
-const CLIPS_HEIGHT: f64 = 340.0;
+const CLIPS_HEIGHT: f64 = 380.0;
 /// 设置页内容多，临时把抽屉拉高
-const SETTINGS_HEIGHT: f64 = 540.0;
+const SETTINGS_HEIGHT: f64 = 560.0;
 
 fn now_ms() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -71,26 +71,86 @@ fn activate_app() {
     }
 }
 
-/// 底部抽屉：宽度按屏幕走，紧贴屏幕底边，左右居中。
-/// 每次显示都重算，换分辨率或挪到副屏之后不会跑到屏幕外。
+/// 底部抽屉：铺满当前屏幕宽度、紧贴屏幕底边。
+/// 屏幕由鼠标位置决定——连续用副屏时不必先点一下窗口再按快捷键。
 fn layout_drawer(w: &WebviewWindow, height: f64) {
+    #[cfg(target_os = "macos")]
+    if let Some(screen) = mac_screen_under_mouse() {
+        let _ = w.set_size(LogicalSize::new(screen.w, height));
+        let y = screen.y + screen.h - height;
+        let _ = w.set_position(LogicalPosition::new(screen.x, y));
+        return;
+    }
+
+    // 非 macOS 或取不到鼠标屏幕时，退回"窗口当前所在屏"
     let Ok(Some(monitor)) = w.current_monitor() else {
         return;
     };
     let scale = monitor.scale_factor();
+    let size = monitor.size();
     let origin = monitor.position();
-    let screen = monitor.size();
+    let logical_w = size.width as f64 / scale;
+    let logical_x = origin.x as f64 / scale;
+    let logical_y = origin.y as f64 / scale;
+    let logical_h = size.height as f64 / scale;
 
-    // 横向卡片条：尽量铺开，左右各留 40pt
-    let screen_logical_w = screen.width as f64 / scale;
-    let width = (screen_logical_w - 80.0).clamp(900.0, 1600.0);
-    let _ = w.set_size(LogicalSize::new(width, height));
+    let _ = w.set_size(LogicalSize::new(logical_w, height));
+    let _ = w.set_position(LogicalPosition::new(logical_x, logical_y + logical_h - height));
+}
 
-    let phys_w = (width * scale).round() as i32;
-    let phys_h = (height * scale).round() as i32;
-    let x = origin.x + (screen.width as i32 - phys_w) / 2;
-    // 贴底：不留任何下边距
-    let y = origin.y + screen.height as i32 - phys_h;
+#[cfg(target_os = "macos")]
+struct ScreenRect {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+}
 
-    let _ = w.set_position(PhysicalPosition::new(x.max(origin.x), y.max(origin.y)));
+/// 用 NSScreen + NSEvent.mouseLocation 找鼠标所在屏幕，返回"主屏左上"为原点的逻辑坐标。
+/// 不走 Tauri 的 monitor 列表，是因为混合 DPI 时它的 position/size 单位不统一。
+#[cfg(target_os = "macos")]
+fn mac_screen_under_mouse() -> Option<ScreenRect> {
+    use cocoa::base::{id, nil};
+    use cocoa::foundation::{NSPoint, NSRect};
+    use objc::{class, msg_send, sel, sel_impl};
+
+    unsafe {
+        let screens: id = msg_send![class!(NSScreen), screens];
+        if screens == nil {
+            return None;
+        }
+        let count: usize = msg_send![screens, count];
+        if count == 0 {
+            return None;
+        }
+        let primary: id = msg_send![screens, objectAtIndex: 0usize];
+        let primary_frame: NSRect = msg_send![primary, frame];
+
+        let mouse: NSPoint = msg_send![class!(NSEvent), mouseLocation];
+
+        for index in 0..count {
+            let screen: id = msg_send![screens, objectAtIndex: index];
+            let frame: NSRect = msg_send![screen, frame];
+
+            let inside = mouse.x >= frame.origin.x
+                && mouse.x < frame.origin.x + frame.size.width
+                && mouse.y >= frame.origin.y
+                && mouse.y < frame.origin.y + frame.size.height;
+            if !inside {
+                continue;
+            }
+
+            // NSScreen 原点在左下、y 向上；窗口坐标要的是主屏左上、y 向下
+            let x = frame.origin.x - primary_frame.origin.x;
+            let y = (primary_frame.origin.y + primary_frame.size.height)
+                - (frame.origin.y + frame.size.height);
+            return Some(ScreenRect {
+                x,
+                y,
+                w: frame.size.width,
+                h: frame.size.height,
+            });
+        }
+        None
+    }
 }

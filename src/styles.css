@@ -946,3 +946,34 @@ mark {
 .card.remote::before {
   background: var(--kind, var(--remote));
 }
+
+/* ---------- 0.6.0：全宽贴边，去掉多余边框 ---------- */
+
+.app {
+  /* 四边不留白：铺满屏幕宽度，底边与屏幕齐平 */
+  padding: 0;
+}
+
+.surface {
+  border-radius: 16px 16px 0 0;
+  /* 只保留顶部一条细线做层次；左右和底部贴边，不要边框与投影（那圈灰边就是它） */
+  border: none;
+  border-top: 1px solid var(--border);
+  box-shadow: none;
+}
+
+.grabber {
+  top: 8px;
+}
+
+.rail {
+  padding: 18px 20px 20px;
+}
+
+.card {
+  flex: 0 0 230px;
+}
+
+.card-media {
+  height: 150px;
+}
