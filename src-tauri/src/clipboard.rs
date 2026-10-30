@@ -87,6 +87,16 @@ pub fn spawn(app: AppHandle, state: Arc<AppState>) {
             match inserted {
                 Some(db::InsertOutcome::Created(clip)) => {
                     let _ = app.emit("clip-added", clip.view());
+                    // 局域网优先送达；连不上就靠 iCloud 兜底
+                    let payload = crate::sync::SyncClip {
+                        id: clip.id.clone(),
+                        hash: clip.hash.clone(),
+                        text: clip.content.clone(),
+                        source_app: clip.source_app.clone(),
+                        created_at: clip.created_at,
+                        pinned: clip.pinned,
+                    };
+                    crate::sync::lan::broadcast_one(app.clone(), state.clone(), payload);
                 }
                 Some(db::InsertOutcome::Touched(id)) => {
                     let _ = app.emit("clip-touched", id);

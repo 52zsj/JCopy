@@ -486,6 +486,17 @@ export default function App() {
                 </div>
               )}
 
+              <div className="row static">
+                <span>
+                  局域网直连
+                  <em>
+                    {sync?.lanPeers
+                      ? `已发现 ${sync.lanPeers} 台同网段设备，优先走直连`
+                      : "未发现同网段设备，仍会走 iCloud"}
+                  </em>
+                </span>
+              </div>
+
               <button className="row" onClick={() => void refresh()}>
                 <span>
                   重新检测权限

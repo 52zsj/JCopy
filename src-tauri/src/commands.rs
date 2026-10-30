@@ -147,6 +147,15 @@ pub fn open_accessibility_settings() {
     }
 }
 
+/// 仅调试用：把面板的渲染尺寸回传出来，供无头验证（截图受限时的唯一手段）。
+#[tauri::command]
+pub fn probe_report(info: String) {
+    #[cfg(debug_assertions)]
+    eprintln!("[jcopy] DOM 探针: {info}");
+    #[cfg(not(debug_assertions))]
+    let _ = info;
+}
+
 #[tauri::command]
 pub fn open_config_dir(state: State<'_, Arc<AppState>>) {
     #[cfg(target_os = "macos")]
@@ -173,6 +182,8 @@ pub struct SyncStatus {
     pub last_push_at: i64,
     pub last_pull_at: i64,
     pub last_error: Option<String>,
+    /// 同网段发现的设备数（局域网直连可用性）
+    pub lan_peers: usize,
 }
 
 #[derive(serde::Serialize)]
@@ -212,6 +223,9 @@ pub fn sync_status(state: State<'_, Arc<AppState>>) -> Result<SyncStatus, String
         .map(|d| dir.starts_with(&d))
         .unwrap_or(false);
 
+    // 先取 lan 再取 sync：广播侧是 lan → sync 的顺序，反过来会死锁
+    let lan_peers = state.lan.lock().map(|l| l.peers.len()).unwrap_or(0);
+
     let rt = state.sync.lock().map_err(|e| e.to_string())?;
     let mut peers: Vec<PeerStatus> = rt.peers.values().cloned().collect();
     peers.sort_by(|a, b| a.name.cmp(&b.name));
@@ -228,6 +242,7 @@ pub fn sync_status(state: State<'_, Arc<AppState>>) -> Result<SyncStatus, String
         last_push_at: rt.last_push_at,
         last_pull_at: rt.last_pull_at,
         last_error: rt.last_error.clone(),
+        lan_peers,
     })
 }
 

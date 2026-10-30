@@ -51,6 +51,16 @@ pub fn encrypt(key: &Key, plain: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// 局域网直连的会话密钥：换个 salt 做域分离，和云端的发件箱密钥互不影响。
+/// 用发送方 id 派生——能解开就证明它持有主密钥，等价于完成了身份校验。
+pub fn lan_key(master: &Key, sender_id: &str) -> Key {
+    let hk = Hkdf::<Sha256>::new(Some(b"jcopy-lan-v1"), master);
+    let mut out = [0u8; 32];
+    hk.expand(sender_id.as_bytes(), &mut out)
+        .expect("HKDF 输出长度固定，不会失败");
+    out
+}
+
 pub fn decrypt(key: &Key, blob: &[u8]) -> Option<Vec<u8>> {
     if blob.len() <= NONCE_LEN {
         return None;

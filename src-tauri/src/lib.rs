@@ -40,7 +40,8 @@ pub fn run() {
             }
 
             clipboard::spawn(handle.clone(), state.clone());
-            sync::engine::spawn(handle.clone(), state);
+            sync::engine::spawn(handle.clone(), state.clone());
+            sync::lan::spawn(handle.clone(), state);
 
             // 调试开关：启动即展开面板，省得每次按快捷键
             if std::env::var("JCOPY_SHOW_ON_START").is_ok() {
@@ -67,6 +68,7 @@ pub fn run() {
             commands::hide_panel,
             commands::open_accessibility_settings,
             commands::open_config_dir,
+            commands::probe_report,
             commands::sync_status,
             commands::sync_set_dir,
             commands::sync_set_enabled,
@@ -118,7 +120,8 @@ fn probe_dom(app: &tauri::AppHandle) {
     };
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(2600));
-        // 用 hash 回传结果：eval 没有返回值，而 hash 变化不需要导航
+        // 走 IPC 回传：eval 没有返回值，而读 window.url() 在 webview 尚未加载时
+        // 会命中 wry 里的 unwrap(nil) 直接把主线程打崩。
         let script = r#"(() => {
             const s = document.querySelector('.surface');
             const n = document.querySelectorAll('.item').length;
@@ -127,15 +130,8 @@ fn probe_dom(app: &tauri::AppHandle) {
                 const r = s.getBoundingClientRect();
                 out = Math.round(r.width) + 'x' + Math.round(r.height) + '-items-' + n;
             }
-            location.hash = 'probe=' + out;
+            window.__TAURI_INTERNALS__.invoke('probe_report', { info: out });
         })()"#;
         let _ = window.eval(script);
-        std::thread::sleep(std::time::Duration::from_millis(800));
-        let frag = window
-            .url()
-            .ok()
-            .and_then(|u| u.fragment().map(|f| f.to_string()))
-            .unwrap_or_default();
-        eprintln!("[jcopy] DOM 探针: {frag}");
     });
 }

@@ -53,6 +53,7 @@ export type SyncStatus = {
   lastPushAt: number;
   lastPullAt: number;
   lastError: string | null;
+  lanPeers: number;
 };
 
 export type InviteInfo = {

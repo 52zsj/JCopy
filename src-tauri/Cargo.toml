@@ -1,6 +1,6 @@
 [package]
 name = "jcopy"
-version = "0.2.0"
+version = "0.3.0"
 description = "跨平台轻量剪贴板共享工具"
 authors = ["jay"]
 edition = "2021"
@@ -27,6 +27,7 @@ aes-gcm = "0.10"
 argon2 = "0.5"
 hkdf = "0.12"
 base64 = "0.22"
+mdns-sd = "0.11"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"
