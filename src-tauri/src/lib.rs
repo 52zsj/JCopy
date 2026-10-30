@@ -33,6 +33,12 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
+            // 在所有 Space 可见：否则激活时 macOS 会把当前 Space 切到窗口那屏，
+            // 多显示器下表现成"两块屏先后亮一下"。
+            if let Some(panel) = app.get_webview_window("panel") {
+                let _ = panel.set_visible_on_all_workspaces(true);
+            }
+
             tray::build(&handle)?;
 
             if let Err(e) = handle.global_shortcut().register(panel_shortcut()) {

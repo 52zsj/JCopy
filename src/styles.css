@@ -977,3 +977,17 @@ mark {
 .card-media {
   height: 150px;
 }
+
+/* ---------- 0.6.1：卡片再宽一点 ---------- */
+
+.card {
+  flex: 0 0 262px;
+}
+
+.card-media {
+  height: 170px;
+}
+
+.card-body {
+  font-size: 13.5px;
+}

@@ -37,6 +37,9 @@ pub fn show(app: &AppHandle) {
         return;
     };
     layout_drawer(&w, CLIPS_HEIGHT);
+    // 隐藏状态下移动窗口时，WindowServer 要到下一帧才真正提交位置。
+    // 不等这一帧就 show，会在旧屏幕闪一下再跳过去——多屏时尤其明显。
+    std::thread::sleep(std::time::Duration::from_millis(24));
     let _ = w.show();
     #[cfg(target_os = "macos")]
     activate_app();
