@@ -73,3 +73,27 @@ export function platformName(p: string): string {
       return p || "未知系统";
   }
 }
+
+export type ClipKind = "text" | "image" | "link" | "color" | "code" | "mail";
+
+/** 按内容猜测类型，用于卡片配色。纯函数，便于单测。 */
+export function detectKind(kind: string, preview: string): ClipKind {
+  if (kind === "image") return "image";
+  const text = preview.trim();
+  if (!text) return "text";
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(text)) return "color";
+  if (/^(rgba?|hsla?)\(/i.test(text)) return "color";
+  if (/^(https?:\/\/|www\.)\S+$/i.test(text)) return "link";
+  if (/^[\w.+-]+@[\w-]+\.[\w.]{2,}$/.test(text)) return "mail";
+  if (/^[{[]/.test(text)) return "code";
+  return "text";
+}
+
+export const KIND_META: Record<ClipKind, { label: string; color: string; soft: string }> = {
+  text: { label: "纯文本", color: "#2B7FFF", soft: "rgba(43, 127, 255, 0.28)" },
+  link: { label: "链接", color: "#12B886", soft: "rgba(18, 184, 134, 0.28)" },
+  mail: { label: "邮箱", color: "#F59F00", soft: "rgba(245, 159, 0, 0.28)" },
+  code: { label: "代码", color: "#8B5CF6", soft: "rgba(139, 92, 246, 0.28)" },
+  image: { label: "图片", color: "#F4526E", soft: "rgba(244, 82, 110, 0.28)" },
+  color: { label: "颜色", color: "#2B7FFF", soft: "rgba(43, 127, 255, 0.28)" },
+};

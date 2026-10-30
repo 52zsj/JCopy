@@ -10,6 +10,8 @@ export type ClipView = {
   lastUsedAt: number;
   pinned: boolean;
   bytes: number;
+  thumb: string | null;
+  dims: string | null;
 };
 
 export type Settings = {

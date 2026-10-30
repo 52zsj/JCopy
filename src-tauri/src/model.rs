@@ -13,6 +13,10 @@ pub struct ClipView {
     pub last_used_at: i64,
     pub pinned: bool,
     pub bytes: i64,
+    /// 图片条目的缩略图绝对路径（前端用 asset 协议转 URL），文本为空
+    pub thumb: Option<String>,
+    /// 图片尺寸，形如 "1920×1080"
+    pub dims: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -20,6 +24,8 @@ pub struct Clip {
     pub id: String,
     pub kind: String,
     pub content: String,
+    /// 入库时算好的一行摘要：文本是内容前 400 字，图片是 "1920 × 1080"
+    pub preview: String,
     pub hash: String,
     pub source_app: Option<String>,
     pub device: String,
@@ -31,16 +37,28 @@ pub struct Clip {
 
 impl Clip {
     pub fn view(&self) -> ClipView {
+        let is_image = self.kind == "image";
         ClipView {
             id: self.id.clone(),
             kind: self.kind.clone(),
-            preview: preview_of(&self.content),
+            preview: self.preview.clone(),
             source_app: self.source_app.clone(),
             device: self.device.clone(),
             created_at: self.created_at,
             last_used_at: self.last_used_at,
             pinned: self.pinned,
             bytes: self.bytes,
+            // 图片条目的 content 是原图路径，缩略图就放在旁边
+            thumb: if is_image {
+                Some(self.content.replace(".png", ".t.png"))
+            } else {
+                None
+            },
+            dims: if is_image {
+                Some(self.preview.clone())
+            } else {
+                None
+            },
         }
     }
 }

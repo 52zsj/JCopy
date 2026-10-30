@@ -1,6 +1,6 @@
 [package]
 name = "jcopy"
-version = "0.4.0"
+version = "0.5.0"
 description = "跨平台轻量剪贴板共享工具"
 authors = ["jay"]
 edition = "2021"
@@ -14,7 +14,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "macos-private-api", "image-png"] }
+tauri = { version = "2", features = ["tray-icon", "macos-private-api", "image-png", "protocol-asset"] }
 tauri-plugin-global-shortcut = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -22,7 +22,8 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
-arboard = "3"
+arboard = { version = "3", features = ["image-data"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
 aes-gcm = "0.10"
 argon2 = "0.5"
 hkdf = "0.12"

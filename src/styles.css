@@ -827,3 +827,122 @@ mark {
 .act.on {
   color: var(--accent);
 }
+
+/* ---------- 0.5.0：放大 + 类型配色 ---------- */
+
+.top-bar {
+  height: 54px;
+  gap: 14px;
+  padding: 0 18px;
+}
+
+.brand {
+  font-size: 13px;
+}
+
+.search-box {
+  width: 400px;
+  height: 34px;
+  border-radius: 10px;
+  padding: 0 12px;
+}
+
+.search-box input {
+  font-size: 13px;
+}
+
+.rail {
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.card {
+  flex: 0 0 220px;
+  border-radius: 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+}
+
+/* 顶部色带按类型着色，四像素足够醒目又不喧宾夺主 */
+.card::before {
+  height: 4px;
+  background: var(--kind, var(--accent));
+  opacity: 1;
+}
+
+.card.active {
+  border-color: var(--kind, var(--accent));
+  box-shadow: 0 0 0 2px var(--kind-soft, var(--accent-soft));
+}
+
+.card-head {
+  padding: 9px 12px 0;
+  font-size: 11.5px;
+}
+
+.card-head .kind {
+  color: var(--kind, var(--text-dim));
+  font-weight: 500;
+}
+
+.card-head .time {
+  font-size: 11px;
+}
+
+.card-sub {
+  padding: 3px 12px 0;
+  font-size: 11px;
+}
+
+.card-body {
+  padding: 10px 12px 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.card-media {
+  margin: 10px 12px 0;
+  height: 132px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--chip-bg);
+  display: grid;
+  place-items: center;
+}
+
+.card-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.card-foot {
+  padding: 8px 12px 10px;
+  font-size: 11px;
+}
+
+.card-foot .ord {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.act {
+  padding: 3px;
+}
+
+/* 卡片底色比面板更实一点，层次更清楚 */
+:root {
+  --card-bg: rgba(255, 255, 255, 0.72);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --card-bg: rgba(255, 255, 255, 0.07);
+  }
+}
+
+/* 类型配色优先于"远端"标记，远端信息在副行用文字表达 */
+.card.remote::before {
+  background: var(--kind, var(--remote));
+}

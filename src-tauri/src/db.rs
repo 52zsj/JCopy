@@ -43,9 +43,13 @@ pub fn new_id() -> String {
 }
 
 pub fn hash_text(s: &str) -> String {
+    hash_bytes(s.as_bytes())
+}
+
+pub fn hash_bytes(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
-    h.update(s.as_bytes());
+    h.update(bytes);
     hex::encode(&h.finalize()[..16])
 }
 
@@ -77,10 +81,12 @@ pub fn insert_or_touch(
     }
 
     let id = new_id();
+    let preview = preview_of(text);
     let clip = Clip {
         id: id.clone(),
         kind: "text".into(),
         content: text.to_string(),
+        preview: preview.clone(),
         hash: hash.to_string(),
         source_app: source_app.map(|s| s.to_string()),
         device: device.to_string(),
@@ -97,7 +103,7 @@ pub fn insert_or_touch(
             clip.kind,
             clip.content,
             clip.hash,
-            preview_of(&clip.content),
+            preview,
             clip.source_app,
             clip.device,
             clip.created_at,
@@ -129,6 +135,7 @@ pub fn insert_remote(
     }
     let id = new_id();
     let now = now_ms();
+    let preview = preview_of(text);
     conn.execute(
         "INSERT INTO clips (id, kind, content, hash, preview, source_app, device, created_at, last_used_at, pinned, bytes)
          VALUES (?1, 'text', ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9)",
@@ -136,7 +143,7 @@ pub fn insert_remote(
             &id,
             text,
             hash,
-            preview_of(text),
+            preview,
             source_app,
             device,
             created_at,
@@ -148,6 +155,7 @@ pub fn insert_remote(
         id,
         kind: "text".into(),
         content: text.to_string(),
+        preview,
         hash: hash.to_string(),
         source_app: source_app.map(str::to_string),
         device: device.to_string(),
@@ -158,9 +166,44 @@ pub fn insert_remote(
     }))
 }
 
+/// 图片条目：content 存原图绝对路径，preview 存 "1920 × 1080"
+pub fn insert_image(
+    conn: &Connection,
+    path: &str,
+    dims: &str,
+    hash: &str,
+    bytes: i64,
+    source_app: Option<&str>,
+    device: &str,
+) -> rusqlite::Result<Option<Clip>> {
+    if has_hash(conn, hash) {
+        return Ok(None);
+    }
+    let id = new_id();
+    let now = now_ms();
+    conn.execute(
+        "INSERT INTO clips (id, kind, content, hash, preview, source_app, device, created_at, last_used_at, pinned, bytes)
+         VALUES (?1, 'image', ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9)",
+        params![&id, path, hash, dims, source_app, device, now, now, bytes],
+    )?;
+    Ok(Some(Clip {
+        id,
+        kind: "image".into(),
+        content: path.to_string(),
+        preview: dims.to_string(),
+        hash: hash.to_string(),
+        source_app: source_app.map(str::to_string),
+        device: device.to_string(),
+        created_at: now,
+        last_used_at: now,
+        pinned: false,
+        bytes,
+    }))
+}
+
 pub fn list(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<Clip>> {
     let mut stmt = conn.prepare(
-        "SELECT id, kind, content, hash, source_app, device, created_at, last_used_at, pinned, bytes
+        "SELECT id, kind, content, preview, hash, source_app, device, created_at, last_used_at, pinned, bytes
          FROM clips
          ORDER BY pinned DESC, created_at DESC
          LIMIT ?1",
@@ -171,22 +214,25 @@ pub fn list(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<Clip>> {
             r.get::<_, String>(1)?,
             r.get::<_, String>(2)?,
             r.get::<_, String>(3)?,
-            r.get::<_, Option<String>>(4)?,
-            r.get::<_, String>(5)?,
-            r.get::<_, i64>(6)?,
+            r.get::<_, String>(4)?,
+            r.get::<_, Option<String>>(5)?,
+            r.get::<_, String>(6)?,
             r.get::<_, i64>(7)?,
             r.get::<_, i64>(8)?,
             r.get::<_, i64>(9)?,
+            r.get::<_, i64>(10)?,
         ))
     })?;
 
     let mut out = Vec::new();
     for row in rows {
-        let (id, kind, content, hash, source_app, device, created_at, last_used_at, pinned, bytes) = row?;
+        let (id, kind, content, preview, hash, source_app, device, created_at, last_used_at, pinned, bytes) =
+            row?;
         out.push(Clip {
             id,
             kind,
             content,
+            preview,
             hash,
             source_app,
             device,
@@ -201,7 +247,7 @@ pub fn list(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<Clip>> {
 
 pub fn get(conn: &Connection, id: &str) -> rusqlite::Result<Option<Clip>> {
     conn.query_row(
-        "SELECT id, kind, content, hash, source_app, device, created_at, last_used_at, pinned, bytes
+        "SELECT id, kind, content, preview, hash, source_app, device, created_at, last_used_at, pinned, bytes
          FROM clips WHERE id = ?1",
         [id],
         |r| {
@@ -209,13 +255,14 @@ pub fn get(conn: &Connection, id: &str) -> rusqlite::Result<Option<Clip>> {
                 id: r.get(0)?,
                 kind: r.get(1)?,
                 content: r.get(2)?,
-                hash: r.get(3)?,
-                source_app: r.get(4)?,
-                device: r.get(5)?,
-                created_at: r.get(6)?,
-                last_used_at: r.get(7)?,
-                pinned: r.get::<_, i64>(8)? != 0,
-                bytes: r.get(9)?,
+                preview: r.get(3)?,
+                hash: r.get(4)?,
+                source_app: r.get(5)?,
+                device: r.get(6)?,
+                created_at: r.get(7)?,
+                last_used_at: r.get(8)?,
+                pinned: r.get::<_, i64>(9)? != 0,
+                bytes: r.get(10)?,
             })
         },
     )

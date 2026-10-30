@@ -4,7 +4,7 @@
 
 - 需求规格：[docs/01-requirements.md](docs/01-requirements.md)
 - 技术栈：Tauri 2 + Rust 平台壳 + TypeScript/React 界面
-- 当前版本：0.4.0（M1 本机闭环 + M2 iCloud 同步 + M3 局域网直连 + 横向卡片条）
+- 当前版本：0.5.0（M1 本机闭环 + M2 iCloud 同步 + M3 局域网直连 + 横向卡片条 + 图片）
 
 ## 现在能做什么
 
@@ -52,7 +52,7 @@ JCopy/
 
 ## 安装
 
-从 `release/0.4.0/` 取 dmg，拖进「应用程序」。
+从 `release/0.5.0/` 取 dmg，拖进「应用程序」。
 
 **首次打开会被 Gatekeeper 拦下** —— 当前包未做 Apple 开发者签名与公证：
 

@@ -5,9 +5,9 @@ use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewW
 static LAST_SHOWN_MS: AtomicU64 = AtomicU64::new(0);
 
 /// 横向卡片条的高度（逻辑像素）：工具栏 + 一行卡片
-const CLIPS_HEIGHT: f64 = 268.0;
+const CLIPS_HEIGHT: f64 = 340.0;
 /// 设置页内容多，临时把抽屉拉高
-const SETTINGS_HEIGHT: f64 = 480.0;
+const SETTINGS_HEIGHT: f64 = 540.0;
 
 fn now_ms() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};

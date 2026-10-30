@@ -46,6 +46,8 @@ pub struct AppState {
     /// 由 JCopy 自己写回剪贴板的内容，监听线程需跳过，避免自我回环。
     pub ignore_hash: Mutex<Option<String>>,
     pub config_dir: PathBuf,
+    /// 图片条目落盘的位置（原图 + .t.png 缩略图）
+    pub images_dir: PathBuf,
     pub sync: Mutex<SyncRuntime>,
     pub lan: Mutex<LanRuntime>,
 }
@@ -74,6 +76,8 @@ pub fn init(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
 
     let data_dir = app.path().app_data_dir()?;
     fs::create_dir_all(&data_dir)?;
+    let images_dir = data_dir.join("images");
+    fs::create_dir_all(&images_dir)?;
     let conn = db::open(&data_dir.join("jcopy.db"))?;
 
     let sync = SyncRuntime {
@@ -89,6 +93,7 @@ pub fn init(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         paused: AtomicBool::new(false),
         ignore_hash: Mutex::new(None),
         config_dir,
+        images_dir,
         sync: Mutex::new(sync),
         lan: Mutex::new(LanRuntime::default()),
     })

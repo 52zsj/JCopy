@@ -1,7 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { api, type ClipView, type InviteInfo, type Settings, type SyncStatus } from "./api";
-import { appLabel, humanBytes, platformName, relativeTime } from "./format";
+import {
+  appLabel,
+  detectKind,
+  humanBytes,
+  KIND_META,
+  platformName,
+  relativeTime,
+} from "./format";
 
 export default function App() {
   const [clips, setClips] = useState<ClipView[]>([]);
@@ -620,6 +628,17 @@ export default function App() {
               ) : (
                 filtered.map((clip, index) => {
                   const remote = Boolean(clip.device) && clip.device !== deviceName;
+                  const kind = detectKind(clip.kind, clip.preview);
+                  const meta = KIND_META[kind];
+                  // 内容本身是色值时，色带直接用那个颜色
+                  const band =
+                    kind === "color" && /^#/.test(clip.preview.trim())
+                      ? clip.preview.trim().slice(0, 7)
+                      : meta.color;
+                  const style = {
+                    "--kind": band,
+                    "--kind-soft": meta.soft,
+                  } as CSSProperties;
                   return (
                     <article
                       key={clip.id}
@@ -627,12 +646,13 @@ export default function App() {
                       className={`card ${index === active ? "active" : ""} ${remote ? "remote" : ""} ${
                         clip.pinned ? "pinned" : ""
                       }`}
+                      style={style}
                       onMouseEnter={() => setActive(index)}
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => void paste(clip.id)}
                     >
                       <div className="card-head">
-                        <span className="kind">纯文本</span>
+                        <span className="kind">{meta.label}</span>
                         <span className="time">{relativeTime(clip.createdAt)}</span>
                       </div>
                       <div className="card-sub">
@@ -640,12 +660,20 @@ export default function App() {
                           {remote ? `来自 ${clip.device}` : appLabel(clip.sourceApp)}
                         </span>
                       </div>
-                      <div className="card-body">
-                        <Highlight text={clip.preview} query={query} />
-                      </div>
+                      {clip.kind === "image" && clip.thumb ? (
+                        <div className="card-media">
+                          <img src={convertFileSrc(clip.thumb)} alt={clip.dims ?? "图片"} />
+                        </div>
+                      ) : (
+                        <div className="card-body">
+                          <Highlight text={clip.preview} query={query} />
+                        </div>
+                      )}
                       <div className="card-foot">
                         <span className="ord">{index + 1}</span>
-                        <span className="size">{humanBytes(clip.bytes)}</span>
+                        <span className="size">
+                          {clip.kind === "image" && clip.dims ? clip.dims : humanBytes(clip.bytes)}
+                        </span>
                         <button
                           className={`act ${clip.pinned ? "on" : ""}`}
                           title={clip.pinned ? "取消收藏" : "收藏"}

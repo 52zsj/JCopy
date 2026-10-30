@@ -70,8 +70,23 @@ pub fn copy_clip(app: AppHandle, state: State<'_, Arc<AppState>>, id: String) ->
 
     {
         let mut cb = arboard::Clipboard::new().map_err(|e| format!("剪贴板不可用：{e}"))?;
-        cb.set_text(clip.content.clone())
-            .map_err(|e| format!("写入剪贴板失败：{e}"))?;
+        if clip.kind == "image" {
+            // content 是原图路径，读回来解码成 RGBA 再塞进剪贴板
+            let img = image::open(&clip.content)
+                .map_err(|e| format!("图片读取失败：{e}"))?
+                .to_rgba8();
+            let (width, height) = img.dimensions();
+            let data = arboard::ImageData {
+                width: width as usize,
+                height: height as usize,
+                bytes: std::borrow::Cow::Owned(img.into_raw()),
+            };
+            cb.set_image(data)
+                .map_err(|e| format!("写入剪贴板失败：{e}"))?;
+        } else {
+            cb.set_text(clip.content.clone())
+                .map_err(|e| format!("写入剪贴板失败：{e}"))?;
+        }
     }
 
     // 让监听线程忽略这次变化，否则会立刻生成一条"来源=自己"的重复记录
