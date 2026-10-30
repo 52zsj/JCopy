@@ -76,12 +76,20 @@ fn activate_app() {
 
 /// 底部抽屉：铺满当前屏幕宽度、紧贴屏幕底边。
 /// 屏幕由鼠标位置决定——连续用副屏时不必先点一下窗口再按快捷键。
+///
+/// 顺序很关键：先把窗口缩到最小、再定位、最后设最终尺寸。
+/// 反过来的话（先 set_size 后 set_position），当两块屏宽度不同时，
+/// 窗口会带着目标屏的宽度停在原来那块屏的位置上，横跨两块屏各露出半截，
+/// 视觉上就是"先闪一下、缩一下、再跑到另一块屏"。
 fn layout_drawer(w: &WebviewWindow, height: f64) {
     #[cfg(target_os = "macos")]
     if let Some(screen) = mac_screen_under_mouse() {
-        let _ = w.set_size(LogicalSize::new(screen.w, height));
-        let y = screen.y + screen.h - height;
-        let _ = w.set_position(LogicalPosition::new(screen.x, y));
+        let y_top = screen.y + screen.h - height;
+        // 优先直接改 NSWindow 的 frame：位置和尺寸一次设定，不存在中间态
+        if place_with_ns_window(w, screen.x, y_top, screen.w, height, screen.primary_top) {
+            return;
+        }
+        resize_and_place(w, screen.x, y_top, screen.w, height);
         return;
     }
 
@@ -97,8 +105,61 @@ fn layout_drawer(w: &WebviewWindow, height: f64) {
     let logical_y = origin.y as f64 / scale;
     let logical_h = size.height as f64 / scale;
 
-    let _ = w.set_size(LogicalSize::new(logical_w, height));
-    let _ = w.set_position(LogicalPosition::new(logical_x, logical_y + logical_h - height));
+    resize_and_place(w, logical_x, logical_y + logical_h - height, logical_w, height);
+}
+
+/// 直接对 NSWindow 调 `setFrame:display:`。
+///
+/// Tauri 的 `set_size` / `set_position` 是投递到主线程的，两次调用之间窗口会短暂处于
+/// "新尺寸 + 旧位置"的状态；两块屏宽度不同时，那一瞬间窗口横跨两块屏各露半截，
+/// 看起来就是先闪一下再缩一下才跑到目标屏。一次 setFrame 没有这个中间态。
+#[cfg(target_os = "macos")]
+fn place_with_ns_window(
+    w: &WebviewWindow,
+    x: f64,
+    y_top: f64,
+    width: f64,
+    height: f64,
+    primary_top: f64,
+) -> bool {
+    use cocoa::base::id;
+    use cocoa::foundation::{NSPoint, NSRect, NSSize};
+    use objc::{msg_send, sel, sel_impl};
+
+    let Ok(ptr) = w.ns_window() else {
+        return false;
+    };
+    if ptr.is_null() {
+        return false;
+    }
+    let ns_window = ptr as id;
+
+    unsafe {
+        // NSWindow 的 frame 是 Cocoa 坐标（左下原点、y 向上）
+        let y_cocoa = primary_top - (y_top + height);
+        // 先塌到目标屏底部一个 8×8 的点：即便中间被渲染了一帧，也只出现在目标屏的角落，
+        // 而不是"带着旧尺寸停在旧屏幕上"
+        let tiny = NSRect::new(NSPoint::new(x, y_cocoa), NSSize::new(8.0, 8.0));
+        let _: () = msg_send![ns_window, setFrame: tiny display: false];
+
+        let frame = NSRect::new(NSPoint::new(x, y_cocoa), NSSize::new(width, height));
+        let _: () = msg_send![ns_window, setFrame: frame display: false];
+        true
+    }
+}
+
+/// 最小 → 定位 → 最终尺寸。窗口此刻是隐藏的，中间的极小尺寸不可见。
+fn resize_and_place(w: &WebviewWindow, x: f64, y: f64, width: f64, height: f64) {
+    // 1. 缩到几乎不可见，这样接下来的跨屏移动不会在两块屏上各露一截
+    let _ = w.set_size(LogicalSize::new(8.0, 8.0));
+    // 2. 移到目标位置
+    let _ = w.set_position(LogicalPosition::new(x, y));
+    // 3. 给出最终尺寸
+    let _ = w.set_size(LogicalSize::new(width, height));
+    // 4. 读一次几何作为屏障：这些调用是投递到主线程的，读操作会排在后面，
+    //    保证 show() 之前 frame 已经真正生效
+    let _ = w.inner_size();
+    let _ = w.outer_position();
 }
 
 #[cfg(target_os = "macos")]
@@ -107,6 +168,8 @@ struct ScreenRect {
     y: f64,
     w: f64,
     h: f64,
+    /// 主屏顶部在 Cocoa 坐标里的 y（用于把"左上原点"换算回去）
+    primary_top: f64,
 }
 
 /// 用 NSScreen + NSEvent.mouseLocation 找鼠标所在屏幕，返回"主屏左上"为原点的逻辑坐标。
@@ -152,6 +215,7 @@ fn mac_screen_under_mouse() -> Option<ScreenRect> {
                 y,
                 w: frame.size.width,
                 h: frame.size.height,
+                primary_top: primary_frame.origin.y + primary_frame.size.height,
             });
         }
         None
