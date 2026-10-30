@@ -156,6 +156,12 @@ pub fn probe_report(info: String) {
     let _ = info;
 }
 
+/// 切换抽屉高度：卡片模式是扁条，设置页需要更高。
+#[tauri::command]
+pub fn set_panel_mode(app: AppHandle, mode: String) {
+    crate::ui::set_mode(&app, &mode);
+}
+
 #[tauri::command]
 pub fn open_config_dir(state: State<'_, Arc<AppState>>) {
     #[cfg(target_os = "macos")]

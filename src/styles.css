@@ -585,3 +585,245 @@ mark {
 .list {
   padding: 8px 10px 12px;
 }
+
+/* ---------- 横向卡片条 ---------- */
+
+:root {
+  --card-bg: rgba(255, 255, 255, 0.55);
+  --accent-soft: rgba(43, 92, 230, 0.28);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --card-bg: rgba(255, 255, 255, 0.05);
+    --accent-soft: rgba(91, 134, 255, 0.32);
+  }
+}
+
+.top-bar {
+  height: 48px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.top-side {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.top-side.right {
+  justify-content: flex-end;
+}
+
+.brand {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.count {
+  font-size: 11px;
+  color: var(--text-faint);
+  background: var(--chip-bg);
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.paused-badge {
+  font-size: 10.5px;
+  color: var(--danger);
+}
+
+.search-box {
+  flex: 0 0 auto;
+  width: 340px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--chip-bg);
+  border: 1px solid transparent;
+}
+
+.search-box:focus-within {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.search-box input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: 12.5px;
+  color: var(--text);
+  font-family: inherit;
+  user-select: text;
+}
+
+.clear {
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.icon-btn {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--chip-bg);
+  color: var(--text);
+}
+
+.rail {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 12px 14px;
+}
+
+.rail::-webkit-scrollbar {
+  height: 0;
+}
+
+.rail-empty {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.card {
+  position: relative;
+  flex: 0 0 176px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  cursor: default;
+  transition: border-color 90ms, box-shadow 90ms;
+}
+
+.card::before {
+  content: "";
+  height: 3px;
+  flex: 0 0 auto;
+  background: var(--accent);
+  opacity: 0.75;
+}
+
+.card.remote::before {
+  background: var(--remote);
+}
+
+.card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 7px 10px 0;
+  font-size: 11px;
+}
+
+.card-head .kind {
+  color: var(--text-dim);
+}
+
+.card-head .time {
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+
+.card-sub {
+  padding: 2px 10px 0;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-sub .remote {
+  color: var(--remote);
+}
+
+.card-body {
+  flex: 1;
+  padding: 8px 10px 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text);
+  overflow: hidden;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.card-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 8px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.card-foot .ord {
+  min-width: 12px;
+}
+
+.card-foot .size {
+  flex: 1;
+}
+
+.act {
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+}
+
+.act:hover {
+  background: var(--chip-bg);
+  color: var(--text-dim);
+}
+
+.act.on {
+  color: var(--accent);
+}

@@ -21,7 +21,8 @@ export default function App() {
   const [dirPath, setDirPath] = useState("");
 
   const inputRef = useRef<HTMLInputElement>(null);
-  const activeRef = useRef<HTMLDivElement>(null);
+  const activeRef = useRef<HTMLElement>(null);
+  const railRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
     const data = await api.bootstrap();
@@ -81,6 +82,11 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  // 剪贴板是扁条、设置页要更高，切换时让 Rust 侧重排窗口
+  useEffect(() => {
+    void api.setPanelMode(settingsOpen ? "settings" : "clips");
+  }, [settingsOpen]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return clips.filter((clip) => {
@@ -96,8 +102,22 @@ export default function App() {
   }, [filtered.length]);
 
   useEffect(() => {
-    activeRef.current?.scrollIntoView({ block: "nearest" });
+    activeRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [active]);
+
+  // 竖向滚轮转成横向滚动：卡片条是横的，用户不会去拖滚动条
+  useEffect(() => {
+    if (settingsOpen) return;
+    const el = railRef.current;
+    if (!el) return;
+    const onWheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      event.preventDefault();
+      el.scrollLeft += event.deltaY;
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [settingsOpen, filtered.length]);
 
   const paste = useCallback(async (id: string) => {
     try {
@@ -135,12 +155,13 @@ export default function App() {
 
       if (settingsOpen) return;
 
-      if (event.key === "ArrowDown") {
+      // 卡片是横向的，左右为主；上下也映射过去，免得肌肉记忆落空
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
         event.preventDefault();
         setActive((i) => Math.min(i + 1, filtered.length - 1));
         return;
       }
-      if (event.key === "ArrowUp") {
+      if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
         event.preventDefault();
         setActive((i) => Math.max(i - 1, 0));
         return;
@@ -280,6 +301,7 @@ export default function App() {
     <div className="app">
       <div className="surface">
         <div className="grabber" aria-hidden="true" />
+
         {settingsOpen ? (
           <div className="settings">
             <div className="settings-head">
@@ -508,36 +530,81 @@ export default function App() {
           </div>
         ) : (
           <>
-            <div className="search-row">
-              <svg className="icon-search" viewBox="0 0 16 16" aria-hidden="true">
-                <circle cx="7" cy="7" r="4.6" fill="none" stroke="currentColor" strokeWidth="1.4" />
-                <path d="M10.4 10.4L13.6 13.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-              </svg>
-              <input
-                ref={inputRef}
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setActive(0);
-                }}
-                placeholder="搜索剪贴板…"
-                spellCheck={false}
-                autoComplete="off"
-              />
-              <button
-                className={`chip ${pinnedOnly ? "on" : ""}`}
-                onClick={() => {
-                  setPinnedOnly((v) => !v);
-                  setActive(0);
-                }}
-              >
-                固定
-              </button>
+            <div className="top-bar">
+              <div className="top-side">
+                <span className="brand">JCopy</span>
+                <span className="count">{filtered.length}</span>
+                {paused && <span className="paused-badge">已暂停</span>}
+              </div>
+
+              <div className="search-box">
+                <svg className="icon-search" viewBox="0 0 16 16" aria-hidden="true">
+                  <circle cx="7" cy="7" r="4.6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+                  <path
+                    d="M10.4 10.4L13.6 13.6"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <input
+                  ref={inputRef}
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setActive(0);
+                  }}
+                  placeholder="搜索剪贴板"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+                {query && (
+                  <button className="clear" onClick={() => setQuery("")} title="清除">
+                    ×
+                  </button>
+                )}
+              </div>
+
+              <div className="top-side right">
+                <button
+                  className={`chip ${pinnedOnly ? "on" : ""}`}
+                  onClick={() => {
+                    setPinnedOnly((v) => !v);
+                    setActive(0);
+                  }}
+                >
+                  收藏
+                </button>
+                <button
+                  className={`chip ${paused ? "on" : ""}`}
+                  onClick={() => void togglePaused()}
+                >
+                  {paused ? "已暂停" : "记录中"}
+                </button>
+                <button className="icon-btn" onClick={() => setSettingsOpen(true)} title="设置">
+                  <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                    <circle
+                      cx="8"
+                      cy="8"
+                      r="2.3"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.3"
+                    />
+                    <path
+                      d="M8 1.5v1.7M8 12.8v1.7M1.5 8h1.7M12.8 8h1.7M3.4 3.4l1.2 1.2M11.4 11.4l1.2 1.2M12.6 3.4l-1.2 1.2M4.6 11.4l-1.2 1.2"
+                      stroke="currentColor"
+                      strokeWidth="1.3"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </button>
+              </div>
             </div>
 
-            <div className="list">
+            <div className="rail" ref={railRef}>
               {filtered.length === 0 ? (
-                <div className="empty">
+                <div className="rail-empty">
                   <div className="empty-title">{query ? `没有匹配「${query}」` : "还没有记录"}</div>
                   <div className="empty-hint">
                     {query ? "试试更短的关键词" : "复制点什么，它会出现在这里"}
@@ -551,44 +618,57 @@ export default function App() {
                   )}
                 </div>
               ) : (
-                filtered.map((clip, index) => (
-                  <div
-                    key={clip.id}
-                    ref={index === active ? activeRef : undefined}
-                    className={`item ${index === active ? "active" : ""} ${clip.pinned ? "pinned" : ""}`}
-                    onMouseEnter={() => setActive(index)}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => void paste(clip.id)}
-                  >
-                    <div className="preview">
-                      <Highlight text={clip.preview} query={query} />
-                    </div>
-                    <div className="meta">
-                      <span className="app">{appLabel(clip.sourceApp)}</span>
-                      <span className="sep">·</span>
-                      <span className={clip.device && clip.device !== deviceName ? "device remote" : "device"}>
-                        {clip.device && clip.device !== deviceName ? `来自 ${clip.device}` : "本机"}
-                      </span>
-                      <span className="sep">·</span>
-                      <span className="time">{relativeTime(clip.createdAt)}</span>
-                    </div>
-                  </div>
-                ))
+                filtered.map((clip, index) => {
+                  const remote = Boolean(clip.device) && clip.device !== deviceName;
+                  return (
+                    <article
+                      key={clip.id}
+                      ref={index === active ? activeRef : undefined}
+                      className={`card ${index === active ? "active" : ""} ${remote ? "remote" : ""} ${
+                        clip.pinned ? "pinned" : ""
+                      }`}
+                      onMouseEnter={() => setActive(index)}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => void paste(clip.id)}
+                    >
+                      <div className="card-head">
+                        <span className="kind">纯文本</span>
+                        <span className="time">{relativeTime(clip.createdAt)}</span>
+                      </div>
+                      <div className="card-sub">
+                        <span className={remote ? "app remote" : "app"}>
+                          {remote ? `来自 ${clip.device}` : appLabel(clip.sourceApp)}
+                        </span>
+                      </div>
+                      <div className="card-body">
+                        <Highlight text={clip.preview} query={query} />
+                      </div>
+                      <div className="card-foot">
+                        <span className="ord">{index + 1}</span>
+                        <span className="size">{humanBytes(clip.bytes)}</span>
+                        <button
+                          className={`act ${clip.pinned ? "on" : ""}`}
+                          title={clip.pinned ? "取消收藏" : "收藏"}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void togglePin(clip.id);
+                          }}
+                        >
+                          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                            <path
+                              d="M8 1.9l1.9 3.8 4.2.6-3.1 3 .7 4.2L8 11.5l-3.7 2 .7-4.2-3.1-3 4.2-.6z"
+                              fill={clip.pinned ? "currentColor" : "none"}
+                              stroke="currentColor"
+                              strokeWidth="1.2"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })
               )}
-            </div>
-
-            <div className="footer">
-              <span className={`status ${paused ? "warn" : ""}`}>
-                {paused ? "已暂停监听" : `${clips.length} 条记录`}
-                {!paused && sync && sync.peers.length > 0 ? ` · ${sync.peers.length} 台已连接` : ""}
-              </span>
-              <span className="hint">
-                <kbd>↑</kbd>
-                <kbd>↓</kbd> 选择 <kbd>↵</kbd> 粘贴 <kbd>⌘P</kbd> 固定
-              </span>
-              <button className="ghost" onClick={() => setSettingsOpen(true)}>
-                设置
-              </button>
             </div>
           </>
         )}

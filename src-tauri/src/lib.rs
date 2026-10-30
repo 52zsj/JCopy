@@ -69,6 +69,7 @@ pub fn run() {
             commands::open_accessibility_settings,
             commands::open_config_dir,
             commands::probe_report,
+            commands::set_panel_mode,
             commands::sync_status,
             commands::sync_set_dir,
             commands::sync_set_enabled,
@@ -119,16 +120,21 @@ fn probe_dom(app: &tauri::AppHandle) {
         return;
     };
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(2600));
+        std::thread::sleep(std::time::Duration::from_millis(3500));
         // 走 IPC 回传：eval 没有返回值，而读 window.url() 在 webview 尚未加载时
         // 会命中 wry 里的 unwrap(nil) 直接把主线程打崩。
         let script = r#"(() => {
             const s = document.querySelector('.surface');
-            const n = document.querySelectorAll('.item').length;
+            const rail = document.querySelector('.rail');
+            const cards = document.querySelectorAll('.card');
             let out = 'NO_SURFACE';
             if (s) {
                 const r = s.getBoundingClientRect();
-                out = Math.round(r.width) + 'x' + Math.round(r.height) + '-items-' + n;
+                const first = cards.length ? cards[0].getBoundingClientRect() : null;
+                out = Math.round(r.width) + 'x' + Math.round(r.height)
+                    + '-cards-' + cards.length
+                    + '-railKids-' + (rail ? rail.children.length : -1)
+                    + '-cardSize-' + (first ? Math.round(first.width) + 'x' + Math.round(first.height) : 'na');
             }
             window.__TAURI_INTERNALS__.invoke('probe_report', { info: out });
         })()"#;

@@ -72,6 +72,7 @@ export const api = {
   setPaused: (paused: boolean) => invoke<boolean>("set_paused", { paused }),
   hidePanel: () => invoke<void>("hide_panel"),
   openAccessibility: () => invoke<void>("open_accessibility_settings"),
+  setPanelMode: (mode: "clips" | "settings") => invoke<void>("set_panel_mode", { mode }),
 
   syncStatus: () => invoke<SyncStatus>("sync_status"),
   syncSetDir: (path: string) => invoke<void>("sync_set_dir", { path }),
