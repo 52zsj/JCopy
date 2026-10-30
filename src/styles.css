@@ -1,30 +1,40 @@
 :root {
-  --surface: rgba(250, 250, 252, 0.88);
+  /* 面板走浅灰、卡片走纯白——靠明度差把卡片"托"起来。
+     两边都用半透明白会糊成一片，整体发白且没有层次。 */
+  --surface: rgba(238, 238, 240, 0.9);
+  --card-bg: #ffffff;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.09), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
   --border: rgba(0, 0, 0, 0.08);
-  --hairline: rgba(0, 0, 0, 0.06);
+  --hairline: rgba(0, 0, 0, 0.07);
   --text: #1d1d1f;
-  --text-dim: #86868b;
-  --text-faint: #a8a8ad;
+  --text-dim: #6e6e73;
+  --text-faint: #9a9aa0;
   --accent: #2b5ce6;
   --item-active: rgba(43, 92, 230, 0.1);
   --item-hover: rgba(0, 0, 0, 0.035);
-  --chip-bg: rgba(0, 0, 0, 0.05);
+  --chip-bg: rgba(255, 255, 255, 0.92);
+  --chip-border: rgba(0, 0, 0, 0.09);
   --danger: #d92d20;
   --remote: #0f8a6d;
+  --pin: #af52de;
+  --record: #34c759;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --surface: rgba(30, 30, 34, 0.88);
+    --surface: rgba(28, 28, 31, 0.92);
+    --card-bg: #2c2c2f;
+    --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.06);
     --border: rgba(255, 255, 255, 0.1);
     --hairline: rgba(255, 255, 255, 0.07);
     --text: #f5f5f7;
-    --text-dim: #9a9aa0;
+    --text-dim: #a1a1a8;
     --text-faint: #6e6e76;
     --accent: #5b86ff;
     --item-active: rgba(91, 134, 255, 0.18);
     --item-hover: rgba(255, 255, 255, 0.05);
-    --chip-bg: rgba(255, 255, 255, 0.08);
+    --chip-bg: rgba(255, 255, 255, 0.09);
+    --chip-border: rgba(255, 255, 255, 0.1);
     --danger: #ff6b5e;
     --remote: #3ddcae;
   }
@@ -589,13 +599,11 @@ mark {
 /* ---------- 横向卡片条 ---------- */
 
 :root {
-  --card-bg: rgba(255, 255, 255, 0.55);
   --accent-soft: rgba(43, 92, 230, 0.28);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --card-bg: rgba(255, 255, 255, 0.05);
     --accent-soft: rgba(91, 134, 255, 0.32);
   }
 }
@@ -933,12 +941,10 @@ mark {
 
 /* 卡片底色比面板更实一点，层次更清楚 */
 :root {
-  --card-bg: rgba(255, 255, 255, 0.72);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --card-bg: rgba(255, 255, 255, 0.07);
   }
 }
 
@@ -990,4 +996,62 @@ mark {
 
 .card-body {
   font-size: 13.5px;
+}
+
+/* ---------- 0.6.3：灰底 + 白卡，参照 iCopy ---------- */
+
+.card {
+  background: var(--card-bg);
+  border: none;
+  box-shadow: var(--card-shadow);
+}
+
+.card::before {
+  height: 5px;
+}
+
+.card.active {
+  border: none;
+  box-shadow: var(--card-shadow), 0 0 0 2px var(--kind, var(--accent));
+}
+
+.search-box {
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-border);
+}
+
+.search-box:focus-within {
+  background: var(--card-bg);
+  border-color: var(--accent);
+}
+
+.chip {
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-border);
+}
+
+/* 分类胶囊上色，和卡片顶部色带同一套语言 */
+.chip.pin.on {
+  background: var(--pin);
+  border-color: transparent;
+  color: #fff;
+}
+
+.chip.rec {
+  background: var(--record);
+  border-color: transparent;
+  color: #fff;
+}
+
+.chip.rec.paused {
+  background: #f59f00;
+}
+
+.card-foot .ord {
+  color: var(--text-faint);
+}
+
+/* 空列表时别用白底，否则像一页白纸 */
+.rail-empty {
+  color: var(--text-dim);
 }

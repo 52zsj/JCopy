@@ -137,11 +137,16 @@ fn probe_dom(app: &tauri::AppHandle) {
             if (s) {
                 const r = s.getBoundingClientRect();
                 const first = cards.length ? cards[0].getBoundingClientRect() : null;
+                const cs = cards.length ? getComputedStyle(cards[0]) : null;
+                const band = cards.length ? getComputedStyle(cards[0], '::before') : null;
                 out = Math.round(r.width) + 'x' + Math.round(r.height)
                     + '-cards-' + cards.length
                     + '-railKids-' + (rail ? rail.children.length : -1)
                     + '-imgs-' + document.querySelectorAll('.card-media img').length
-                    + '-cardSize-' + (first ? Math.round(first.width) + 'x' + Math.round(first.height) : 'na');
+                    + '-cardSize-' + (first ? Math.round(first.width) + 'x' + Math.round(first.height) : 'na')
+                    + ' | surface=' + getComputedStyle(s).backgroundColor
+                    + ' card=' + (cs ? cs.backgroundColor : 'na')
+                    + ' band=' + (band ? band.backgroundColor : 'na');
             }
             window.__TAURI_INTERNALS__.invoke('probe_report', { info: out });
         })()"#;

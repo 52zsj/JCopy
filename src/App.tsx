@@ -575,7 +575,7 @@ export default function App() {
 
               <div className="top-side right">
                 <button
-                  className={`chip ${pinnedOnly ? "on" : ""}`}
+                  className={`chip pin ${pinnedOnly ? "on" : ""}`}
                   onClick={() => {
                     setPinnedOnly((v) => !v);
                     setActive(0);
@@ -584,7 +584,7 @@ export default function App() {
                   收藏
                 </button>
                 <button
-                  className={`chip ${paused ? "on" : ""}`}
+                  className={`chip rec ${paused ? "paused" : ""}`}
                   onClick={() => void togglePaused()}
                 >
                   {paused ? "已暂停" : "记录中"}
