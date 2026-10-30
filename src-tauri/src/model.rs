@@ -95,7 +95,7 @@ impl Default for Settings {
             device_id: String::new(),
             device_name: String::new(),
             auto_paste: false,
-            max_clips: 1000,
+            max_clips: 500,
             max_bytes: 200 * 1024 * 1024,
             hotkey: "CommandOrControl+Shift+V".into(),
             sync_enabled: true,

@@ -48,8 +48,17 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             }
         });
 
-    if let Some(icon) = app.default_window_icon() {
-        builder = builder.icon(icon.clone());
+    // 菜单栏用单色模板图标：系统会按浅色/深色自动反色，比彩色应用图标协调得多
+    const TRAY_ICON: &[u8] = include_bytes!("../icons/tray.png");
+    match tauri::image::Image::from_bytes(TRAY_ICON) {
+        Ok(icon) => {
+            builder = builder.icon(icon).icon_as_template(true);
+        }
+        Err(_) => {
+            if let Some(icon) = app.default_window_icon() {
+                builder = builder.icon(icon.clone());
+            }
+        }
     }
 
     builder.build(app)?;

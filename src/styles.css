@@ -515,3 +515,29 @@ kbd {
 .sync-dir .bad {
   color: var(--danger);
 }
+
+.row em.bad {
+  color: var(--danger);
+}
+
+.empty-kbd {
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+mark {
+  background: rgba(43, 92, 230, 0.2);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+@media (prefers-color-scheme: dark) {
+  mark {
+    background: rgba(91, 134, 255, 0.35);
+  }
+}

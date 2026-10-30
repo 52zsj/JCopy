@@ -40,6 +40,24 @@ JCopy/
 **已知限制**：iCloud 是最终一致的文件夹，不是实时通道。跨网延迟 5–60 秒，取决于 iCloud 客户端；
 局域网直连（<300ms）尚未实现，见路线图 M3。
 
+## 安装
+
+从 `release/0.2.0/` 取 dmg，拖进「应用程序」。
+
+**首次打开会被 Gatekeeper 拦下** —— 当前包未做 Apple 开发者签名与公证：
+
+- 在「应用程序」里右键 JCopy → 打开，或
+- `xattr -dr com.apple.quarantine /Applications/JCopy.app`
+
+首次启动后：
+
+1. 菜单栏出现剪贴板图标（没有 Dock 图标，这是有意的）
+2. 复制任意文本，按 `⌘⇧V` 看是否出现在面板里
+3. 想开自动粘贴，去「系统设置 → 隐私与安全性 → 辅助功能」勾上 JCopy
+
+**Windows 版**需要在 Windows 机器上执行 `npm run app:build`。Tauri 无法在 macOS 上产出 Windows 安装包，
+代码里 Windows 分支（`SendInput`、iCloudDrive 路径探测）已写好，但未经真机编译验证。
+
 ## 开发
 
 需要 Rust 1.77+ 与 Node 20+。

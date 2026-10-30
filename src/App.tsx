@@ -17,6 +17,8 @@ export default function App() {
   const [invite, setInvite] = useState<InviteInfo | null>(null);
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinCode, setJoinCode] = useState("");
+  const [dirOpen, setDirOpen] = useState(false);
+  const [dirPath, setDirPath] = useState("");
 
   const inputRef = useRef<HTMLInputElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
@@ -54,6 +56,7 @@ export default function App() {
         setActive(0);
         setSettingsOpen(false);
         setToast(null);
+        void api.syncStatus().then(setSync).catch(() => {});
         requestAnimationFrame(() => inputRef.current?.focus());
       });
 
@@ -234,6 +237,17 @@ export default function App() {
     }
   }, []);
 
+  const applyDir = useCallback(async () => {
+    try {
+      await api.syncSetDir(dirPath.trim());
+      setSync(await api.syncStatus());
+      setDirOpen(false);
+      setToast("同步目录已更新");
+    } catch (error) {
+      setToast(typeof error === "string" ? error : "目录设置失败");
+    }
+  }, [dirPath]);
+
   const patchSettings = useCallback(
     async (patch: Partial<Settings>) => {
       if (!settings) return;
@@ -260,6 +274,7 @@ export default function App() {
   }, [paused]);
 
   const deviceName = settings?.deviceName ?? "";
+  const isMac = navigator.userAgent.includes("Mac");
 
   return (
     <div className="app">
@@ -311,6 +326,19 @@ export default function App() {
                   <em>
                     {clips.length} 条 · 上限 {settings?.maxClips ?? 0} 条 /{" "}
                     {humanBytes(settings?.maxBytes ?? 0)}
+                  </em>
+                </span>
+              </div>
+
+              <div className="row static">
+                <span>
+                  唤起快捷键
+                  <em>
+                    {settings?.hotkey === "CommandOrControl+Shift+V"
+                      ? isMac
+                        ? "⌘ ⇧ V"
+                        : "Ctrl + Shift + V"
+                      : (settings?.hotkey ?? "")}
                   </em>
                 </span>
               </div>
@@ -416,12 +444,47 @@ export default function App() {
                 </>
               )}
 
-              <div className="sync-dir">
-                <span className={sync?.dirExists ? "" : "bad"}>
-                  {sync?.isIcloud ? "iCloud 云盘" : "同步目录"}：{sync?.dir ?? "检测中…"}
+              <button
+                className="row"
+                onClick={() => {
+                  if (!dirOpen) setDirPath(sync?.dir ?? "");
+                  setDirOpen((v) => !v);
+                }}
+              >
+                <span>
+                  同步目录
+                  <em className={sync?.dirExists === false ? "bad" : ""}>
+                    {sync?.dirExists === false
+                      ? "目录不可用，请手动指定"
+                      : `${sync?.isIcloud ? "iCloud 云盘" : "自定义"} · ${sync?.dir ?? "检测中…"}`}
+                  </em>
                 </span>
-                {sync?.lastError && <span className="bad">{sync.lastError}</span>}
-              </div>
+                <span className="chev">{dirOpen ? "收起" : "更改"}</span>
+              </button>
+
+              {dirOpen && (
+                <div className="join-row">
+                  <input
+                    value={dirPath}
+                    onChange={(e) => setDirPath(e.target.value)}
+                    placeholder="粘贴云盘目录的绝对路径"
+                    spellCheck={false}
+                  />
+                  <button
+                    className="ghost"
+                    onClick={() => void applyDir()}
+                    disabled={!dirPath.trim()}
+                  >
+                    保存
+                  </button>
+                </div>
+              )}
+
+              {sync?.lastError && (
+                <div className="sync-dir">
+                  <span className="bad">{sync.lastError}</span>
+                </div>
+              )}
 
               <button className="row" onClick={() => void refresh()}>
                 <span>
@@ -467,6 +530,13 @@ export default function App() {
                   <div className="empty-hint">
                     {query ? "试试更短的关键词" : "复制点什么，它会出现在这里"}
                   </div>
+                  {!query && (
+                    <div className="empty-kbd">
+                      <kbd>{isMac ? "⌘" : "Ctrl"}</kbd>
+                      <kbd>{isMac ? "⇧" : "Shift"}</kbd>
+                      <kbd>V</kbd> 随时唤起
+                    </div>
+                  )}
                 </div>
               ) : (
                 filtered.map((clip, index) => (
@@ -478,7 +548,9 @@ export default function App() {
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => void paste(clip.id)}
                   >
-                    <div className="preview">{clip.preview}</div>
+                    <div className="preview">
+                      <Highlight text={clip.preview} query={query} />
+                    </div>
                     <div className="meta">
                       <span className="app">{appLabel(clip.sourceApp)}</span>
                       <span className="sep">·</span>
@@ -496,6 +568,7 @@ export default function App() {
             <div className="footer">
               <span className={`status ${paused ? "warn" : ""}`}>
                 {paused ? "已暂停监听" : `${clips.length} 条记录`}
+                {!paused && sync && sync.peers.length > 0 ? ` · ${sync.peers.length} 台已连接` : ""}
               </span>
               <span className="hint">
                 <kbd>↑</kbd>
@@ -516,4 +589,19 @@ export default function App() {
 
 function Switch({ on }: { on: boolean }) {
   return <span className={`switch ${on ? "on" : ""}`} aria-hidden="true" />;
+}
+
+/** 搜索结果高亮：只标第一处匹配，避免长文本里满屏色块 */
+function Highlight({ text, query }: { text: string; query: string }) {
+  const needle = query.trim();
+  if (!needle) return <>{text}</>;
+  const index = text.toLowerCase().indexOf(needle.toLowerCase());
+  if (index < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, index)}
+      <mark>{text.slice(index, index + needle.length)}</mark>
+      {text.slice(index + needle.length)}
+    </>
+  );
 }
