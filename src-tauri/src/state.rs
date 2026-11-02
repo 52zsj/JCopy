@@ -2,7 +2,6 @@ use rusqlite::Connection;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
@@ -63,16 +62,6 @@ pub struct AppState {
     /// 图片条目落盘的位置（原图 + .t.png 缩略图）
     pub images_dir: PathBuf,
     pub sync: Mutex<SyncRuntime>,
-    pub lan: Mutex<LanRuntime>,
-}
-
-/// 局域网直连的运行时状态：靠 mDNS 发现同网段的对端。
-#[derive(Default)]
-pub struct LanRuntime {
-    pub peers: HashMap<String, SocketAddr>,
-    pub port: u16,
-    /// 服务发现用的守护进程，必须常驻，drop 掉广播就停了
-    pub daemon: Option<mdns_sd::ServiceDaemon>,
 }
 
 pub fn init(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
@@ -109,7 +98,6 @@ pub fn init(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         config_dir,
         images_dir,
         sync: Mutex::new(sync),
-        lan: Mutex::new(LanRuntime::default()),
     })
 }
 

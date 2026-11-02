@@ -274,7 +274,6 @@ pub struct SyncStatus {
     pub last_pull_at: i64,
     pub last_error: Option<String>,
     /// 同网段发现的设备数（局域网直连可用性）
-    pub lan_peers: usize,
     /// 主密钥指纹，两台机器对比即可判断是否配到同一把密钥
     pub key_fingerprint: Option<String>,
     /// 本机发件箱里实际发了多少条（0 说明过滤后没东西可发）
@@ -300,6 +299,9 @@ pub struct SyncStatus {
 #[serde(rename_all = "camelCase")]
 pub struct InviteInfo {
     pub code: String,
+    /// 可直接复制到另一台的配对串（JCP1.xxx）。不依赖云盘传文件，
+    /// 云盘同步卡住时也能完成配对
+    pub token: String,
     pub expires_at: i64,
     pub path: String,
 }
@@ -337,9 +339,6 @@ pub fn sync_status(
     let is_icloud = crate::state::detect_icloud_dir()
         .map(|d| dir.starts_with(&d))
         .unwrap_or(false);
-
-    // 先取 lan 再取 sync：广播侧是 lan → sync 的顺序，反过来会死锁
-    let lan_peers = state.lan.lock().map(|l| l.peers.len()).unwrap_or(0);
 
     let (
         enabled,
@@ -482,7 +481,6 @@ pub fn sync_status(
         last_push_at,
         last_pull_at,
         last_error,
-        lan_peers,
         key_fingerprint: key.map(|k| crypto::fingerprint(&k)),
         own_clips,
         peer_files,
@@ -614,6 +612,7 @@ pub fn sync_create_invite(state: State<'_, Arc<AppState>>) -> Result<InviteInfo,
 
     Ok(InviteInfo {
         code,
+        token: format!("JCP1.{}", B64.encode(key)),
         expires_at: invite.expires_at,
         path: file.display().to_string(),
     })
@@ -630,7 +629,8 @@ pub fn sync_join(state: State<'_, Arc<AppState>>, code: String) -> Result<String
     let dir = current_sync_dir(&state);
     let pair_dir = dir.join("JCopy").join("pair");
     let entries = fs::read_dir(&pair_dir).map_err(|_| {
-        "同步目录里没有找到配对邀请。请确认两台设备登录的是同一个 iCloud 账号，且已装 iCloud 云盘客户端"
+        "云盘里还没有 JCopy/pair 目录：邀请文件在另一台生成后，要先通过云盘同步过来。\
+         如果一直等不到，改用「配对串」——复制一串文本到这台粘贴即可，不依赖云盘"
             .to_string()
     })?;
 
@@ -651,7 +651,16 @@ pub fn sync_join(state: State<'_, Arc<AppState>>, code: String) -> Result<String
     }
 
     let Some((path, payload)) = found else {
-        return Err("配对码不正确，或邀请已过期".into());
+        let count = fs::read_dir(&pair_dir)
+            .map(|it| it.flatten().count())
+            .unwrap_or(0);
+        return Err(if count == 0 {
+            "云盘里还没有邀请文件（多半是云盘没同步过来或空间不足）。\
+             可以改用「配对串」配对，不依赖云盘"
+                .to_string()
+        } else {
+            format!("配对码不正确，或邀请已过期（10 分钟）。云盘里有 {count} 个邀请文件，都不是这个码")
+        });
     };
 
     let key = decode_b64_key(&payload.key).ok_or("邀请内容损坏")?;
@@ -671,6 +680,48 @@ pub fn sync_join(state: State<'_, Arc<AppState>>, code: String) -> Result<String
     // 邀请是一次性的
     let _ = fs::remove_file(path);
     Ok(payload.device_name)
+}
+
+/// 用「配对串」直接配对：不走云盘、不读文件，复制粘贴即可。
+///
+/// 云盘空间满或同步没到位时，邀请文件可能一直传不到另一台，
+/// 表现为"码是新的，但对面说已失效"。配对串绕开这条通道。
+#[tauri::command]
+pub fn sync_join_token(state: State<'_, Arc<AppState>>, token: String) -> Result<String, String> {
+    let raw = token
+        .trim()
+        .strip_prefix("JCP1.")
+        .ok_or("配对串格式不对，应该以 JCP1. 开头")?;
+    let key = decode_b64_key(raw).ok_or("配对串内容损坏，请重新复制")?;
+
+    {
+        let mut rt = state.sync.lock().map_err(|e| e.to_string())?;
+        rt.key = Some(key);
+        rt.enabled = true;
+        rt.last_push_hash.clear();
+        rt.mismatched_peers = 0;
+    }
+    {
+        use base64::engine::general_purpose::STANDARD as B64;
+        use base64::Engine;
+        let mut s = state.settings.lock().map_err(|e| e.to_string())?;
+        s.sync_key = Some(B64.encode(key));
+        s.sync_enabled = true;
+        save_settings(&state.config_dir, &s);
+    }
+    Ok("配对成功".into())
+}
+
+/// 复制一段文本并让监听线程忽略它（配对串不该进历史）
+#[tauri::command]
+pub fn copy_ignored(state: State<'_, Arc<AppState>>, text: String) -> Result<(), String> {
+    {
+        let mut cb = arboard::Clipboard::new().map_err(|e| format!("剪贴板不可用：{e}"))?;
+        cb.set_text(text.clone())
+            .map_err(|e| format!("写入剪贴板失败：{e}"))?;
+    }
+    *state.ignore_hash.lock().unwrap() = Some(db::hash_text(&text));
+    Ok(())
 }
 
 #[tauri::command]

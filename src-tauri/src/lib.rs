@@ -47,7 +47,6 @@ pub fn run() {
 
             clipboard::spawn(handle.clone(), state.clone());
             sync::engine::spawn(handle.clone(), state.clone());
-            sync::lan::spawn(handle.clone(), state);
 
             // 调试开关：启动即展开面板，省得每次按快捷键
             if std::env::var("JCOPY_SHOW_ON_START").is_ok() {
@@ -82,6 +81,8 @@ pub fn run() {
             commands::sync_set_enabled,
             commands::sync_create_invite,
             commands::sync_join,
+            commands::sync_join_token,
+            commands::copy_ignored,
             commands::sync_now,
             commands::sync_reset,
         ])
@@ -201,6 +202,19 @@ fn probe_dom(app: &tauri::AppHandle) {
                         + ' marks=' + document.querySelectorAll('mark').length);
                 }, 400);
             }, 900);
+
+            // 配对串：生成 → 直接用它配对，验证"不依赖云盘"这条路真的通
+            setTimeout(() => {
+                const inv = window.__TAURI_INTERNALS__.invoke;
+                inv('sync_create_invite')
+                    .then((info) => inv('sync_status', { deep: false })
+                        .then((before) => inv('sync_join_token', { token: info.token })
+                            .then((msg) => inv('sync_status', { deep: false })
+                                .then((after) => report('配对串 ' + info.token.slice(0, 10) + '… fp '
+                                    + (before.keyFingerprint || '-') + '→' + (after.keyFingerprint || '-')
+                                    + ' msg=' + msg)))))
+                    .catch((e) => report('配对串测试失败: ' + e));
+            }, 6200);
 
             // 右键菜单：先清空搜索（否则可能一张卡都没有），再派发 contextmenu
             setTimeout(() => {

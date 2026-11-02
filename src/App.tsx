@@ -39,6 +39,7 @@ export default function App() {
   const [invite, setInvite] = useState<InviteInfo | null>(null);
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinCode, setJoinCode] = useState("");
+  const [joinToken, setJoinToken] = useState("");
   const [dirOpen, setDirOpen] = useState(false);
   const [dirPath, setDirPath] = useState("");
 
@@ -320,6 +321,28 @@ export default function App() {
     };
   }, [settingsOpen]);
 
+  const copyToken = useCallback(async () => {
+    if (!invite) return;
+    try {
+      await api.copyIgnored(invite.token);
+      setToast("配对串已复制，到另一台粘贴即可");
+    } catch (error) {
+      setToast(typeof error === "string" ? error : "复制失败");
+    }
+  }, [invite]);
+
+  const joinWithToken = useCallback(async () => {
+    try {
+      const message = await api.syncJoinToken(joinToken);
+      setJoinToken("");
+      setJoinOpen(false);
+      setToast(message);
+      setSync(await api.syncStatus(true));
+    } catch (error) {
+      setToast(typeof error === "string" ? error : "配对失败");
+    }
+  }, [joinToken]);
+
   const createInvite = useCallback(async () => {
     try {
       setInvite(await api.syncCreateInvite());
@@ -547,28 +570,50 @@ export default function App() {
                 <div className="invite-card">
                   <div className="invite-code">{invite.code}</div>
                   <div className="invite-hint">
-                    在另一台设备的 JCopy 里选「输入配对码」，10 分钟内有效
+                    在另一台设备输入这 6 位数字。若那边一直提示失效，
+                    说明云盘没把邀请文件传过去——改用下面的配对串。
                   </div>
+                  <button className="ghost invite-token" onClick={() => void copyToken()}>
+                    复制配对串
+                  </button>
                 </div>
               )}
 
               {joinOpen && (
-                <div className="join-row">
-                  <input
-                    value={joinCode}
-                    onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    placeholder="输入 6 位配对码"
-                    inputMode="numeric"
-                    autoFocus
-                  />
-                  <button
-                    className="ghost"
-                    onClick={() => void joinWithCode()}
-                    disabled={joinCode.length !== 6}
-                  >
-                    连接
-                  </button>
-                </div>
+                <>
+                  <div className="join-row">
+                    <input
+                      value={joinCode}
+                      onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="输入 6 位配对码"
+                      inputMode="numeric"
+                      autoFocus
+                    />
+                    <button
+                      className="ghost"
+                      onClick={() => void joinWithCode()}
+                      disabled={joinCode.length !== 6}
+                    >
+                      连接
+                    </button>
+                  </div>
+                  <div className="join-row">
+                    <input
+                      value={joinToken}
+                      onChange={(e) => setJoinToken(e.target.value.trim())}
+                      placeholder="或粘贴配对串 JCP1.…（不依赖云盘）"
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                    <button
+                      className="ghost"
+                      onClick={() => void joinWithToken()}
+                      disabled={!joinToken}
+                    >
+                      配对
+                    </button>
+                  </div>
+                </>
               )}
 
               {sync?.peers.map((peer) => (
@@ -724,23 +769,11 @@ export default function App() {
                   {(sync.peerFiles ?? []).some((f) => f.missingImages > 0) && (
                     <div className="diag-note">
                       发件箱里已经有图片条目，但原图还在云盘上传/下载中。
-                      图片要单独传原图，比文本慢，几 MB 通常 10 秒到 2 分钟；
-                      局域网直连不传图片，只走云盘。
+                      图片要单独传原图，比文本慢，几 MB 通常 10 秒到 2 分钟。
                     </div>
                   )}
                 </div>
               )}
-
-              <div className="row static">
-                <span>
-                  局域网直连
-                  <em>
-                    {sync?.lanPeers
-                      ? `已发现 ${sync.lanPeers} 台同网段设备，优先走直连`
-                      : "未发现同网段设备，仍会走 iCloud"}
-                  </em>
-                </span>
-              </div>
 
               <button className="row" onClick={() => void refresh()}>
                 <span>

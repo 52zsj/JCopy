@@ -143,21 +143,6 @@ pub fn spawn(app: AppHandle, state: Arc<AppState>) {
             match inserted {
                 Some(db::InsertOutcome::Created(clip)) => {
                     let _ = app.emit("clip-added", clip.view());
-                    // 只有文本走局域网直推；图片体积大，交给 iCloud 慢慢搬
-                    if clip.kind == "text" {
-                        let payload = crate::sync::SyncClip {
-                            id: clip.id.clone(),
-                            hash: clip.hash.clone(),
-                            kind: "text".into(),
-                            text: clip.content.clone(),
-                            image_ref: None,
-                            dims: None,
-                            source_app: clip.source_app.clone(),
-                            created_at: clip.created_at,
-                            pinned: clip.pinned,
-                        };
-                        crate::sync::lan::broadcast_one(app.clone(), state.clone(), payload);
-                    }
                 }
                 Some(db::InsertOutcome::Touched(id)) => {
                     let _ = app.emit("clip-touched", id);

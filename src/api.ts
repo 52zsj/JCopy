@@ -77,7 +77,6 @@ export type SyncStatus = {
   lastPushAt: number;
   lastPullAt: number;
   lastError: string | null;
-  lanPeers: number;
   /** 主密钥指纹：两台机器一致才可能互相解密 */
   keyFingerprint: string | null;
   /** 本机发件箱里实际发布了多少条 */
@@ -99,6 +98,8 @@ export type SyncStatus = {
 
 export type InviteInfo = {
   code: string;
+  /** 可直接粘贴到另一台的配对串（JCP1.xxx），不依赖云盘传文件 */
+  token: string;
   expiresAt: number;
   path: string;
 };
@@ -122,6 +123,8 @@ export const api = {
   syncSetEnabled: (enabled: boolean) => invoke<void>("sync_set_enabled", { enabled }),
   syncCreateInvite: () => invoke<InviteInfo>("sync_create_invite"),
   syncJoin: (code: string) => invoke<string>("sync_join", { code }),
+  syncJoinToken: (token: string) => invoke<string>("sync_join_token", { token }),
+  copyIgnored: (text: string) => invoke<void>("copy_ignored", { text }),
   syncNow: () => invoke<void>("sync_now"),
   syncReset: () => invoke<void>("sync_reset"),
 };

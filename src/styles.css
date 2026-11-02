@@ -1418,3 +1418,9 @@ mark {
 .sync-chip.off i {
   background: var(--text-faint);
 }
+
+/* 配对串按钮：云盘传不动时的备用配对通道 */
+.invite-token {
+  margin-top: 8px;
+  width: 100%;
+}
