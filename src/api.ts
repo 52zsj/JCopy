@@ -90,6 +90,10 @@ export type SyncStatus = {
   pulledImages: number;
   /** 有图片条目但原图还没落盘，正常为 0 */
   pendingImages: number;
+  /** 共享目录里有几台设备的发件箱本机解不开（密钥不一致） */
+  mismatchedPeers: number;
+  /** 同步目录所在卷剩余空间（MB），u64::MAX 表示拿不到 */
+  dirFreeMb: number;
   peerFiles: PeerFile[];
 };
 

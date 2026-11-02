@@ -1,6 +1,6 @@
 [package]
 name = "jcopy"
-version = "0.9.3"
+version = "0.9.4"
 description = "跨平台轻量剪贴板共享工具"
 authors = ["jay"]
 edition = "2021"
@@ -37,6 +37,7 @@ objc = "0.2"
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.58", features = [
   "Win32_Foundation",
+  "Win32_Storage_FileSystem",
   "Win32_System_DataExchange",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_WindowsAndMessaging",

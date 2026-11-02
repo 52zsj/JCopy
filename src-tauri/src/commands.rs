@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
@@ -287,6 +287,11 @@ pub struct SyncStatus {
     pub pulled_images: usize,
     /// 有图片条目但原图还没落盘（正常应为 0）
     pub pending_images: usize,
+    /// 共享目录里有几台设备的发件箱本机解不开
+    pub mismatched_peers: usize,
+    /// 同步目录所在卷的剩余空间（MB）。iCloud 目录写满时文件写不进去，
+    /// 但本地磁盘错误平时看不见，所以直接摆到界面上
+    pub dir_free_mb: u64,
     /// 共享目录下的全部发件箱文件（含自己那份）；只有 deep 模式才扫描
     pub peer_files: Vec<PeerFile>,
 }
@@ -348,6 +353,7 @@ pub fn sync_status(
         pulled_clips,
         pulled_images,
         pending_images,
+        mismatched_peers,
     ) = {
         let rt = state.sync.lock().map_err(|e| e.to_string())?;
         let mut peers: Vec<PeerStatus> = rt.peers.values().cloned().collect();
@@ -364,6 +370,7 @@ pub fn sync_status(
             rt.pulled_clips,
             rt.pulled_images,
             rt.pending_images,
+            rt.mismatched_peers,
         )
     };
 
@@ -484,7 +491,50 @@ pub fn sync_status(
         pulled_clips,
         pulled_images,
         pending_images,
+        mismatched_peers,
+        dir_free_mb: free_mb(&dir),
     })
+}
+
+/// 目录所在卷的剩余空间（MB）。拿不到时返回一个很大的值，界面就不报警。
+fn free_mb(dir: &Path) -> u64 {
+    #[cfg(unix)]
+    {
+        let Ok(out) = std::process::Command::new("df").arg("-m").arg(dir).output() else {
+            return u64::MAX;
+        };
+        let text = String::from_utf8_lossy(&out.stdout);
+        // 第二行：Filesystem 1M-blocks Used Available Capacity Mounted
+        if let Some(line) = text.lines().nth(1) {
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            if let Some(avail) = cols.get(3).and_then(|v| v.parse::<u64>().ok()) {
+                return avail;
+            }
+        }
+        u64::MAX
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows::core::HSTRING;
+        use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+        let mut free: u64 = 0;
+        let wide = HSTRING::from(dir.display().to_string());
+        let ok = unsafe {
+            GetDiskFreeSpaceExW(&wide, Some(&mut free), None, None).is_ok()
+        };
+        if ok {
+            free / (1024 * 1024)
+        } else {
+            u64::MAX
+        }
+    }
+
+    #[cfg(not(any(unix, target_os = "windows")))]
+    {
+        let _ = dir;
+        u64::MAX
+    }
 }
 
 #[tauri::command]

@@ -714,6 +714,13 @@ export default function App() {
                     </div>
                   )}
 
+                  <div className="diag-note">
+                    云盘目录剩余 {sync.dirFreeMb > 1_000_000 ? "未知" : `${sync.dirFreeMb} MB`}
+                    {sync.dirFreeMb < 500
+                      ? " · 空间不足时 iCloud 会拒绝上传，文件只留在本机，另一台永远收不到"
+                      : " · 本机写入后由 iCloud 负责上传，通常 5–60 秒到达另一台"}
+                  </div>
+
                   {(sync.peerFiles ?? []).some((f) => f.missingImages > 0) && (
                     <div className="diag-note">
                       发件箱里已经有图片条目，但原图还在云盘上传/下载中。
@@ -752,24 +759,56 @@ export default function App() {
                 <span className="brand">JCopy</span>
                 <span className="count">{filtered.length}</span>
                 {paused && <span className="paused-badge">已暂停</span>}
-                {sync?.enabled && sync.paired && (
+                {/* 同步状态条：无论开没开、配没配都要出现，
+                    否则用户根本不知道同步处于什么状态（"以为在同步，其实没配对"） */}
+                {sync && (
                   <button
-                    className={`sync-chip${
-                      sync.pendingImages > 0 ? " pending" : sync.lastError ? " bad" : " ok"
+                    className={`sync-chip ${
+                      !sync.enabled || !sync.paired
+                        ? "off"
+                        : sync.lastError
+                          ? "bad"
+                          : sync.mismatchedPeers > 0
+                            ? "pending"
+                            : sync.dirFreeMb < 200
+                              ? "bad"
+                              : sync.pendingImages > 0
+                                ? "pending"
+                                : "ok"
                     }`}
                     title={
-                      sync.lastError ??
-                      `发出 ${sync.pushedClips} 条（${sync.pushedImages} 图）· 收到 ${sync.pulledClips} 条（${sync.pulledImages} 图）` +
-                        (sync.pendingImages > 0
-                          ? ` · ${sync.pendingImages} 张原图待传`
-                          : "") +
-                        " · 点击打开同步设置"
+                      !sync.enabled
+                        ? "跨设备同步未开启 · 点击去开启"
+                        : !sync.paired
+                          ? "已开启同步但还没配对 · 点击生成/输入配对码"
+                          : (sync.lastError ??
+                              (sync.mismatchedPeers > 0
+                                ? `共享目录里有 ${sync.mismatchedPeers} 台设备的发件箱本机解不开（密钥不一致）。` +
+                                  "两台必须输入同一个配对码，点开看详情 · "
+                                : "") +
+                              `发出 ${sync.pushedClips} 条（${sync.pushedImages} 图）· 收到 ${sync.pulledClips} 条（${sync.pulledImages} 图）` +
+                                (sync.pendingImages > 0
+                                  ? ` · ${sync.pendingImages} 张原图待传`
+                                  : "") +
+                                ` · 云盘目录剩余 ${sync.dirFreeMb} MB · 点击打开同步设置`)
                     }
                     onClick={() => setSettingsOpen(true)}
                   >
                     <i />
-                    <span>{sync.lastError ? "同步异常" : `↑${sync.pushedClips} ↓${sync.pulledClips}`}</span>
-                    {(sync.pushedImages > 0 || sync.pulledImages > 0) && (
+                    <span>
+                      {!sync.enabled
+                        ? "同步未开启"
+                        : !sync.paired
+                          ? "待配对"
+                          : sync.lastError
+                            ? "同步异常"
+                            : sync.mismatchedPeers > 0
+                              ? `${sync.mismatchedPeers} 台密钥不匹配`
+                              : sync.dirFreeMb < 200
+                                ? "磁盘将满"
+                                : `↑${sync.pushedClips} ↓${sync.pulledClips}`}
+                    </span>
+                    {sync.enabled && sync.paired && !sync.lastError && (
                       <em>
                         图 {sync.pushedImages}/{sync.pulledImages}
                       </em>

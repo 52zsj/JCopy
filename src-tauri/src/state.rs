@@ -46,6 +46,9 @@ pub struct SyncRuntime {
     pub pulled_images: usize,
     /// 本机发件箱里有图片条目、但原图还没落进共享目录的张数（正常应为 0）
     pub pending_images: usize,
+    /// 共享目录里有几个发件箱是本机解不开的（含旧配对残留）。
+    /// 大于 0 说明"有设备的数据在这儿，但我们读不了"——通常是密钥不一致
+    pub mismatched_peers: usize,
     pub last_error: Option<String>,
     pub peers: HashMap<String, PeerStatus>,
 }

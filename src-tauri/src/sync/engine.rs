@@ -212,6 +212,7 @@ fn pull(
     // 本轮累计（写进 runtime 后按增量累加到总数）
     let mut total_received = 0usize;
     let mut total_images = 0usize;
+    let mut mismatched = 0usize;
 
     for entry in entries.flatten().take(MAX_PEER_FILES) {
         let path = entry.path();
@@ -229,7 +230,9 @@ fn pull(
         // 解不开基本只有一种原因：两台机器的主密钥不一致（各自生成过配对码）。
         // 以前这里静默 continue，界面看不出任何异常——现在记下来，让用户能看见。
         let Some(outbox) = protocol::open_outbox(key, &peer_id, &blob) else {
-            // 但十分钟没动过的解不开文件属于上次配对的残留，不该一直报警
+            // 全部记下来供界面预警；但只有"新鲜的"才进错误文案，
+            // 十分钟没动过的多半是上次配对的残留，不该每轮都弹红字
+            mismatched += 1;
             if !is_stale(&path) {
                 undecryptable.push(peer_id.clone());
             }
@@ -283,6 +286,7 @@ fn pull(
     rt.last_pull_at = protocol::db_now_ms();
     rt.pulled_clips += total_received;
     rt.pulled_images += total_images;
+    rt.mismatched_peers = mismatched;
     rt.last_error = if undecryptable.is_empty() {
         None
     } else {

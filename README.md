@@ -6,7 +6,7 @@
 
 - 需求规格：[docs/01-requirements.md](docs/01-requirements.md)
 - 技术栈：Tauri 2 + Rust 平台壳 + TypeScript/React 界面
-- 当前版本：0.9.3（本机闭环 + iCloud 同步 + 局域网直连 + 全宽卡片条 + 图片同步）
+- 当前版本：0.9.4（本机闭环 + iCloud 同步 + 局域网直连 + 全宽卡片条 + 图片同步）
 
 ## 现在能做什么
 

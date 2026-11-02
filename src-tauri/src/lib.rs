@@ -222,7 +222,9 @@ fn probe_dom(app: &tauri::AppHandle) {
                 setTimeout(() => {
                     const buttons = Array.from(document.querySelectorAll('.ctx-menu button'))
                         .map((b) => b.textContent.trim());
-                    report('chip=' + document.querySelectorAll('.sync-chip').length
+                    const chip = document.querySelector('.sync-chip');
+                    report('chip=[' + (chip ? chip.textContent.trim().replace(/\s+/g, ' ') : '无') + ']'
+                        + ' cls=' + (chip ? chip.className.replace('sync-chip ', '') : '-')
                         + ' menu=[' + buttons.join(',') + ']');
                     const mask = document.querySelector('.ctx-mask');
                     if (mask) mask.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));

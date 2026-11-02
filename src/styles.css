@@ -1408,3 +1408,13 @@ mark {
   margin: 3px 6px;
   background: var(--hairline);
 }
+
+/* 同步未开启 / 待配对：不能整个消失，否则用户以为在同步 */
+.sync-chip.off {
+  border-color: var(--chip-border);
+  color: var(--text-faint);
+}
+
+.sync-chip.off i {
+  background: var(--text-faint);
+}
