@@ -28,13 +28,13 @@ jobs:
           # 一台机器同时出 Apple Silicon 与 Intel 的包
           - os: macos-14
             label: macOS Universal
-            build-args: '--bundles app --target universal-apple-darwin'
+            buildArgs: '--bundles app --target universal-apple-darwin'
           - os: windows-latest
             label: Windows x64
-            build-args: '--bundles nsis'
+            buildArgs: '--bundles nsis'
           - os: ubuntu-22.04
             label: Linux x64
-            build-args: '--bundles deb,appimage'
+            buildArgs: '--bundles deb,appimage'
 
     steps:
       - name: 检出代码
@@ -75,7 +75,7 @@ jobs:
       - name: 编译并打包
         shell: bash
         # tauri.conf 里配了 beforeBuildCommand，前端会自动构建
-        run: npx tauri build ${{ matrix.build-args }}
+        run: npx tauri build ${{ matrix.buildArgs }}
 
       - name: 生成 dmg 与 zip（macOS）
         if: matrix.os == 'macos-14'
