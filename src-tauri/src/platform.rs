@@ -1,3 +1,9 @@
+// cocoa crate 已废弃（建议迁 objc2），macOS 分支仍在用它读前台应用，
+// 这里局部静音，避免构建刷屏
+#![allow(deprecated)]
+
+// 只在 macOS 分支里用得到；不加 cfg 的话 Windows 构建会报 unused import
+#[cfg(target_os = "macos")]
 use std::ffi::CStr;
 
 /// 当前前台应用的标识，用于卡片上的「来源」标记与黑名单判断。

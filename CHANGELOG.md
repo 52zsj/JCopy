@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.5
+
+清理编译警告。行为无变化，只是让构建输出重新变得可读。
+
+### 修复
+
+- Windows 构建报 `unused import: std::ffi::CStr`：这个导入只在 macOS 分支用得到，
+  加了 `#[cfg(target_os = "macos")]`
+- 报 `unused imports: DeviceInfo, Invite, InvitePayload, Outbox`：
+  `sync/mod.rs` 里这几个再导出没人用（内部都走 `protocol::` 路径），只保留 `SyncClip`
+
+### 顺手清理
+
+- `ui.rs` / `platform.rs` 依赖的 `cocoa` crate 已被官方标记废弃（建议迁 objc2），
+  这两个文件里 `allow(deprecated)` 局部静音——macOS 构建原本有 95 条警告，
+  会把真正有用的提示埋掉。其它模块的废弃警告仍然可见
+- 现在 `cargo build` 只剩依赖 crate 自带的提示，自己的代码零警告
+
 ## 0.8.4
 
 自检面板分清「旧配对残留」和「当前没配上」，不再一律报红。

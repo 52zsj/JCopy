@@ -1,3 +1,8 @@
+// cocoa crate 已被官方标记废弃（建议迁 objc2），但本文件还在用它调 NSWindow 的
+// setFrame / 激活策略。迁移是独立任务，这里先局部静音，免得 macOS 构建刷屏
+// 把真正有用的警告埋掉；其它模块的废弃警告仍然可见。
+#![allow(deprecated)]
+
 use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewWindow};
 
