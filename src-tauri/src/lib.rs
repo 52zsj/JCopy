@@ -180,6 +180,7 @@ fn probe_dom(app: &tauri::AppHandle) {
                             : f.stale ? 'STALE' : 'BAD');
                     }).join(',');
                     report('sync fp=' + (st.keyFingerprint || '-') + ' own=' + st.ownClips
+                        + ' shared=' + (st.sharedImages ?? 0) + ' wait=' + (st.waitingImages ?? 0)
                         + ' files=[' + files + '] err=' + (st.lastError || '-'));
                 }).catch((e) => report('sync invoke 失败: ' + e));
             }, 4200);

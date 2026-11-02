@@ -347,7 +347,10 @@ export default function App() {
     try {
       const token = await api.syncPairString();
       setPairToken(token);
+      // 一步到位：生成即复制，不用再点一次
+      await api.copyIgnored(token);
       setSync(await api.syncStatus(false));
+      setToast("配对串已复制，到另一台粘贴即可");
     } catch (error) {
       setToast(typeof error === "string" ? error : "生成配对串失败");
     }
@@ -559,11 +562,10 @@ export default function App() {
                 <div className="invite-card">
                   <div className="invite-token-text">{pairToken}</div>
                   <div className="invite-hint">
-                    复制后到另一台设备的「输入配对码」里粘贴，点配对即可。
-                    这串是主密钥本身，别贴到公开地方；要作废就在任一台重新生成。
+                    已复制到剪贴板，到另一台「粘贴配对串」粘进去即可。
                   </div>
                   <button className="ghost invite-token" onClick={() => void copyToken()}>
-                    复制配对串
+                    再复制一次
                   </button>
                 </div>
               )}
@@ -607,7 +609,7 @@ export default function App() {
                 <>
                   <button className="row" onClick={() => void createPairToken()}>
                     <span>
-                      生成配对码
+                      生成配对串
                       <em>让另一台设备输入这个码</em>
                     </span>
                     <span className="chev">→</span>
@@ -664,6 +666,18 @@ export default function App() {
                 </span>
                 <span className="chev">{dirOpen ? "收起" : "更改"}</span>
               </button>
+
+              <div className="row static">
+                <span>
+                  共享目录图片
+                  <em>
+                    程序已放入 {sync?.sharedImages ?? 0} 张
+                    {sync?.sharedImages
+                      ? " · 到另一台的云盘文件夹里数一数这个数对不对，就知道云盘有没有传过去"
+                      : " · 复制一张图试试，这里应该立刻 +1"}
+                  </em>
+                </span>
+              </div>
 
               {dirOpen && (
                 <div className="join-row">
@@ -729,7 +743,8 @@ export default function App() {
                   ) && (
                     <div className="diag-warn">
                       对方的发件箱解不开，说明两台机器的主密钥不是同一把。
-                      请在 A 机器点「生成配对码」，再到 B 机器输入同一个 6 位码重新配对。
+                      两台设备必须用同一把主密钥。请在一台点「生成配对串」，
+                      复制到另一台「粘贴配对串」重新配对。
                     </div>
                   )}
 
@@ -794,11 +809,11 @@ export default function App() {
                       !sync.enabled
                         ? "跨设备同步未开启 · 点击去开启"
                         : !sync.paired
-                          ? "已开启同步但还没配对 · 点击生成/输入配对码"
+                          ? "已开启同步但还没配对 · 点开生成/粘贴配对串"
                           : (sync.lastError ??
                               (sync.mismatchedPeers > 0
                                 ? `共享目录里有 ${sync.mismatchedPeers} 台设备的发件箱本机解不开（密钥不一致）。` +
-                                  "两台必须输入同一个配对码，点开看详情 · "
+                                  "两台必须用同一把密钥，点开重新配对 · "
                                 : "") +
                               `发出 ${sync.pushedClips} 条（${sync.pushedImages} 图）· 收到 ${sync.pulledClips} 条（${sync.pulledImages} 图）` +
                                 (sync.pendingImages > 0

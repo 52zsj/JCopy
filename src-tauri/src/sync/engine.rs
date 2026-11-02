@@ -361,13 +361,21 @@ fn pull_image(
     let Ok(meta) = fs::metadata(&source) else {
         return Ok(None);
     };
-    if meta.len() > MAX_IMAGE_SYNC_BYTES as u64 {
+    // 0 字节多半是云盘的占位符还没真正落下来；超限则整个放弃
+    if meta.len() == 0 || meta.len() > MAX_IMAGE_SYNC_BYTES as u64 {
         return Ok(None);
     }
 
     let local_id = db::new_id();
     let dest = state.images_dir.join(format!("{local_id}.png"));
     fs::copy(&source, &dest).map_err(|e| e.to_string())?;
+    // 复制完再验一次大小：云盘按需下载时可能复制出 0 字节的空文件，
+    // 那样一张"看起来同步了、点开是空白"的图比没有更糟
+    let copied = fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
+    if copied == 0 {
+        let _ = fs::remove_file(&dest);
+        return Ok(None);
+    }
 
     let thumb = state.images_dir.join(format!("{local_id}.t.png"));
     if crate::clipboard::make_thumbnail(&dest, &thumb).is_none() {

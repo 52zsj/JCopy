@@ -292,6 +292,8 @@ pub struct SyncStatus {
     pub waiting_images: usize,
     /// 本机有内容超过体积上限被跳过（图片 12MB / 文本 256KB）
     pub skipped_oversize: usize,
+    /// 共享目录里由本机放置的图片文件数（能直接对照 Windows 端有没有收到）
+    pub shared_images: usize,
     /// 同步目录所在卷的剩余空间（MB）。iCloud 目录写满时文件写不进去，
     /// 但本地磁盘错误平时看不见，所以直接摆到界面上
     pub dir_free_mb: u64,
@@ -466,6 +468,8 @@ pub fn sync_status(
         own_clips = file.clips;
     }
 
+    let shared_image_count = count_shared_images(&shared_images, &settings.device_id);
+
     Ok(SyncStatus {
         enabled,
         paired: key.is_some(),
@@ -489,8 +493,25 @@ pub fn sync_status(
         mismatched_peers,
         waiting_images,
         skipped_oversize,
+        shared_images: shared_image_count,
         dir_free_mb: free_mb(&dir),
     })
+}
+
+/// 共享目录里属于本机的图片文件数——就是"程序到底放了几张图到云盘目录"，
+/// 用户可以直接拿这个数和另一台的文件夹对比，一眼看出是没放还是没传。
+fn count_shared_images(dir: &Path, own_id: &str) -> usize {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .filter(|entry| {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { return false };
+            name.starts_with(own_id) && name.ends_with(".png")
+        })
+        .count()
 }
 
 /// 目录所在卷的剩余空间（MB）。拿不到时返回一个很大的值，界面就不报警。

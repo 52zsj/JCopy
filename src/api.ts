@@ -95,6 +95,8 @@ export type SyncStatus = {
   waitingImages: number;
   /** 本机超过体积上限被跳过的条数 */
   skippedOversize: number;
+  /** 共享目录里由本机放置的图片文件数 */
+  sharedImages: number;
   /** 同步目录所在卷剩余空间（MB），u64::MAX 表示拿不到 */
   dirFreeMb: number;
   peerFiles: PeerFile[];
