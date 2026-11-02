@@ -33,6 +33,9 @@ pub struct Clip {
     pub last_used_at: i64,
     pub pinned: bool,
     pub bytes: i64,
+    /// 是否本机产生。同步只发 true 的条目——用布尔标记而不是比对设备名，
+    /// 这样改过设备名、或两台机器同名，都不会漏发或反复回传。
+    pub local: bool,
 }
 
 impl Clip {

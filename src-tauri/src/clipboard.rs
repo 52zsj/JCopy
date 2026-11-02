@@ -107,7 +107,7 @@ pub fn spawn(app: AppHandle, state: Arc<AppState>) {
                 } else {
                     save_image(&state.images_dir, img).and_then(|(path, dims, bytes)| {
                         let conn = state.db.lock().unwrap();
-                        db::insert_image(&conn, &path, &dims, &hash, bytes, source.as_deref(), &device)
+                        db::insert_image(&conn, &path, &dims, &hash, bytes, source.as_deref(), &device, true)
                             .ok()
                             .flatten()
                             .map(db::InsertOutcome::Created)

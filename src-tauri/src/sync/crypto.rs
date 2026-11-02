@@ -40,6 +40,16 @@ pub fn device_file_key(master: &Key, device_id: &str) -> Key {
     out
 }
 
+/// 主密钥指纹：给人眼比对用的 8 位十六进制。
+/// 两台机器显示同一个指纹，才可能互相解开对方的发件箱。
+pub fn fingerprint(master: &Key) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(b"jcopy-key-fp-v1");
+    hasher.update(master);
+    hex::encode(&hasher.finalize()[..4])
+}
+
 /// 输出 nonce || ciphertext
 pub fn encrypt(key: &Key, plain: &[u8]) -> Option<Vec<u8>> {
     let cipher = Aes256Gcm::new_from_slice(key).ok()?;

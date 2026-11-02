@@ -88,10 +88,12 @@ fn push(
     }
 
     // 只发本机产生的条目：从对端同步来的内容不再回传，天然切断回环。
-    // 图片按策略过滤——默认只有收藏过的才出去，避免把 iCloud 塞满。
+    // 用 c.local 判断而不是比对设备名——改过设备名之后，历史条目的 device 还是旧名字，
+    // 按名字比会把整段历史漏发（这正是"B 机器一直收不到东西"的一个原因）。
     let items: Vec<SyncClip> = clips
         .into_iter()
-        .filter(|c| c.device == device.name)
+        .filter(|c| c.local)
+        // 图片按策略过滤——默认只有收藏过的才出去，避免把 iCloud 塞满
         .filter(|c| match c.kind.as_str() {
             "image" => match image_mode {
                 "off" => false,
@@ -181,6 +183,7 @@ fn pull(
     };
 
     let mut found: Vec<PeerStatus> = Vec::new();
+    let mut undecryptable: Vec<String> = Vec::new();
 
     for entry in entries.flatten().take(MAX_PEER_FILES) {
         let path = entry.path();
@@ -195,8 +198,10 @@ fn pull(
         }
 
         let Ok(blob) = fs::read(&path) else { continue };
-        // 解不开说明不是同一配对组（或文件损坏），静默跳过，不打扰用户
+        // 解不开基本只有一种原因：两台机器的主密钥不一致（各自生成过配对码）。
+        // 以前这里静默 continue，界面看不出任何异常——现在记下来，让用户能看见。
         let Some(outbox) = protocol::open_outbox(key, &peer_id, &blob) else {
+            undecryptable.push(peer_id.clone());
             continue;
         };
 
@@ -239,7 +244,20 @@ fn pull(
 
     let mut rt = state.sync.lock().map_err(|e| e.to_string())?;
     rt.last_pull_at = protocol::db_now_ms();
-    rt.last_error = None;
+    rt.last_error = if undecryptable.is_empty() {
+        None
+    } else {
+        eprintln!(
+            "[jcopy] 有 {} 个对端发件箱解不开：{}",
+            undecryptable.len(),
+            undecryptable.join(", ")
+        );
+        Some(format!(
+            "有 {} 个对端发件箱解不开（本机与对方的主密钥不一致）：{}",
+            undecryptable.len(),
+            undecryptable.join("、")
+        ))
+    };
     rt.peers = found.into_iter().map(|p| (p.id.clone(), p)).collect();
     Ok(())
 }
@@ -300,6 +318,7 @@ fn pull_image(
         meta.len() as i64,
         clip.source_app.as_deref(),
         from_device,
+        false,
     )
     .map_err(|e| e.to_string())
 }

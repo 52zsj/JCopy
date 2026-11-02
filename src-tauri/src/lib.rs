@@ -159,10 +159,26 @@ fn probe_dom(app: &tauri::AppHandle) {
                     ? Math.round(modal.getBoundingClientRect().width) + 'x' + Math.round(modal.getBoundingClientRect().height)
                     : 'NONE';
                 const winH = s ? Math.round(s.getBoundingClientRect().height) : -1;
-                report(base + ' | modal=' + size + ' segs=' + document.querySelectorAll('.seg').length + ' winH=' + winH);
+                report(base + ' | modal=' + size
+                    + ' segs=' + document.querySelectorAll('.seg').length
+                    + ' diag=' + document.querySelectorAll('.sync-diag').length
+                    + ' rows=' + document.querySelectorAll('.diag-line').length
+                    + ' winH=' + winH);
                 const done = document.querySelector('.modal .ghost');
                 if (done) done.click();
             });
+
+            // 同步自检：等一轮 push/pull 之后再查，否则数据还没写出来
+            setTimeout(() => {
+                window.__TAURI_INTERNALS__.invoke('sync_status').then((st) => {
+                    const files = (st.peerFiles || []).map((f) => {
+                        const tag = f.isSelf ? 'self' : f.id.slice(0, 6);
+                        return tag + ':' + (f.decryptable ? f.clips + '条' : 'BAD');
+                    }).join(',');
+                    report('sync fp=' + (st.keyFingerprint || '-') + ' own=' + st.ownClips
+                        + ' files=[' + files + '] err=' + (st.lastError || '-'));
+                }).catch((e) => report('sync invoke 失败: ' + e));
+            }, 4200);
         })()"#;
         let _ = window.eval(script);
     });

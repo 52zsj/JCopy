@@ -591,6 +591,40 @@ export default function App() {
                 </div>
               )}
 
+              {sync?.paired && (
+                <div className="sync-diag">
+                  <div className="diag-head">
+                    <span>配对指纹</span>
+                    <code>{sync.keyFingerprint ?? "—"}</code>
+                    <span className="diag-hint">
+                      两台机器一致才能互通 · 本机发布 {sync.ownClips} 条
+                    </span>
+                  </div>
+
+                  {(sync.peerFiles ?? []).map((file) => (
+                    <div
+                      key={file.id}
+                      className={`diag-line${file.decryptable ? "" : " bad"}`}
+                    >
+                      <span className="diag-id">{file.isSelf ? "本机" : file.id.slice(0, 8)}</span>
+                      <span className="diag-meta">
+                        {file.decryptable ? `${file.clips} 条` : (file.error ?? "解不开")}
+                      </span>
+                      <span className="diag-time">
+                        {file.updatedAt ? relativeTime(file.updatedAt) : "—"}
+                      </span>
+                    </div>
+                  ))}
+
+                  {(sync.peerFiles ?? []).some((f) => !f.isSelf && !f.decryptable) && (
+                    <div className="diag-warn">
+                      对方的发件箱解不开，说明两台机器的主密钥不是同一把。
+                      请在 A 机器点「生成配对码」，再到 B 机器输入同一个 6 位码重新配对。
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="row static">
                 <span>
                   局域网直连

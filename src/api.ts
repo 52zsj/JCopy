@@ -49,6 +49,16 @@ export type PeerStatus = {
   online: boolean;
 };
 
+export type PeerFile = {
+  id: string;
+  size: number;
+  updatedAt: number;
+  isSelf: boolean;
+  decryptable: boolean;
+  clips: number;
+  error: string | null;
+};
+
 export type SyncStatus = {
   enabled: boolean;
   paired: boolean;
@@ -62,6 +72,11 @@ export type SyncStatus = {
   lastPullAt: number;
   lastError: string | null;
   lanPeers: number;
+  /** 主密钥指纹：两台机器一致才可能互相解密 */
+  keyFingerprint: string | null;
+  /** 本机发件箱里实际发布了多少条 */
+  ownClips: number;
+  peerFiles: PeerFile[];
 };
 
 export type InviteInfo = {

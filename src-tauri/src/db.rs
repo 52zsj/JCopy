@@ -22,11 +22,29 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
             created_at   INTEGER NOT NULL,
             last_used_at INTEGER NOT NULL,
             pinned       INTEGER NOT NULL DEFAULT 0,
-            bytes        INTEGER NOT NULL DEFAULT 0
+            bytes        INTEGER NOT NULL DEFAULT 0,
+            local        INTEGER NOT NULL DEFAULT 1
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_clips_hash ON clips(hash);
         CREATE INDEX IF NOT EXISTS idx_clips_created ON clips(created_at DESC);",
     )?;
+
+    // 老库升级：早期靠 device 名字判断"是不是本机产生的"，一旦用户改了设备名，
+    // 历史条目的 device 还是旧名字，就再也不会被发进同步发件箱。
+    // 现在改用 local 列显式标记，改名不再影响。历史数据都是本机产生的，默认 1 是对的。
+    let has_local = {
+        let mut stmt = conn.prepare("PRAGMA table_info(clips)")?;
+        // 先收成 Vec，否则 MappedRows 借用 stmt，出块时先析构 stmt 会报生命周期错误
+        let names: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .filter_map(Result::ok)
+            .collect();
+        names.iter().any(|name| name == "local")
+    };
+    if !has_local {
+        conn.execute("ALTER TABLE clips ADD COLUMN local INTEGER NOT NULL DEFAULT 1", [])?;
+    }
+
     Ok(conn)
 }
 
@@ -94,10 +112,11 @@ pub fn insert_or_touch(
         last_used_at: now,
         pinned: false,
         bytes: text.len() as i64,
+        local: true,
     };
     conn.execute(
-        "INSERT INTO clips (id, kind, content, hash, preview, source_app, device, created_at, last_used_at, pinned, bytes)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10)",
+        "INSERT INTO clips (id, kind, content, hash, preview, source_app, device, created_at, last_used_at, pinned, bytes, local)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, 1)",
         params![
             clip.id,
             clip.kind,
@@ -137,8 +156,8 @@ pub fn insert_remote(
     let now = now_ms();
     let preview = preview_of(text);
     conn.execute(
-        "INSERT INTO clips (id, kind, content, hash, preview, source_app, device, created_at, last_used_at, pinned, bytes)
-         VALUES (?1, 'text', ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9)",
+        "INSERT INTO clips (id, kind, content, hash, preview, source_app, device, created_at, last_used_at, pinned, bytes, local)
+         VALUES (?1, 'text', ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, 0)",
         params![
             &id,
             text,
@@ -163,10 +182,12 @@ pub fn insert_remote(
         last_used_at: now,
         pinned: false,
         bytes: text.len() as i64,
+        local: false,
     }))
 }
 
-/// 图片条目：content 存原图绝对路径，preview 存 "1920 × 1080"
+/// 图片条目：content 存原图绝对路径，preview 存 "1920 × 1080"。
+/// `local` 为 true 表示本机采集，false 表示从对端同步进来的。
 pub fn insert_image(
     conn: &Connection,
     path: &str,
@@ -175,6 +196,7 @@ pub fn insert_image(
     bytes: i64,
     source_app: Option<&str>,
     device: &str,
+    local: bool,
 ) -> rusqlite::Result<Option<Clip>> {
     if has_hash(conn, hash) {
         return Ok(None);
@@ -182,9 +204,9 @@ pub fn insert_image(
     let id = new_id();
     let now = now_ms();
     conn.execute(
-        "INSERT INTO clips (id, kind, content, hash, preview, source_app, device, created_at, last_used_at, pinned, bytes)
-         VALUES (?1, 'image', ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9)",
-        params![&id, path, hash, dims, source_app, device, now, now, bytes],
+        "INSERT INTO clips (id, kind, content, hash, preview, source_app, device, created_at, last_used_at, pinned, bytes, local)
+         VALUES (?1, 'image', ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10)",
+        params![&id, path, hash, dims, source_app, device, now, now, bytes, if local { 1 } else { 0 }],
     )?;
     Ok(Some(Clip {
         id,
@@ -198,12 +220,13 @@ pub fn insert_image(
         last_used_at: now,
         pinned: false,
         bytes,
+        local,
     }))
 }
 
 pub fn list(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<Clip>> {
     let mut stmt = conn.prepare(
-        "SELECT id, kind, content, preview, hash, source_app, device, created_at, last_used_at, pinned, bytes
+        "SELECT id, kind, content, preview, hash, source_app, device, created_at, last_used_at, pinned, bytes, local
          FROM clips
          ORDER BY pinned DESC, created_at DESC
          LIMIT ?1",
@@ -221,12 +244,13 @@ pub fn list(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<Clip>> {
             r.get::<_, i64>(8)?,
             r.get::<_, i64>(9)?,
             r.get::<_, i64>(10)?,
+            r.get::<_, i64>(11)?,
         ))
     })?;
 
     let mut out = Vec::new();
     for row in rows {
-        let (id, kind, content, preview, hash, source_app, device, created_at, last_used_at, pinned, bytes) =
+        let (id, kind, content, preview, hash, source_app, device, created_at, last_used_at, pinned, bytes, local) =
             row?;
         out.push(Clip {
             id,
@@ -240,6 +264,7 @@ pub fn list(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<Clip>> {
             last_used_at,
             pinned: pinned != 0,
             bytes,
+            local: local != 0,
         });
     }
     Ok(out)
@@ -247,7 +272,7 @@ pub fn list(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<Clip>> {
 
 pub fn get(conn: &Connection, id: &str) -> rusqlite::Result<Option<Clip>> {
     conn.query_row(
-        "SELECT id, kind, content, preview, hash, source_app, device, created_at, last_used_at, pinned, bytes
+        "SELECT id, kind, content, preview, hash, source_app, device, created_at, last_used_at, pinned, bytes, local
          FROM clips WHERE id = ?1",
         [id],
         |r| {
@@ -263,6 +288,7 @@ pub fn get(conn: &Connection, id: &str) -> rusqlite::Result<Option<Clip>> {
                 last_used_at: r.get(8)?,
                 pinned: r.get::<_, i64>(9)? != 0,
                 bytes: r.get(10)?,
+                local: r.get::<_, i64>(11)? != 0,
             })
         },
     )

@@ -189,6 +189,23 @@ pub fn open_config_dir(state: State<'_, Arc<AppState>>) {
 
 // ---------------------------------------------------------------- 跨设备同步
 
+/// 共享目录里的一个发件箱文件。用来回答"文件都在，为什么数据没过来"。
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PeerFile {
+    /// 设备 id（文件名去掉 .enc）
+    pub id: String,
+    pub size: u64,
+    pub updated_at: i64,
+    /// 是不是本机写的
+    pub is_self: bool,
+    /// 能否用本机主密钥解开——false 基本等于"两台机器的配对密钥不一致"
+    pub decryptable: bool,
+    /// 能解开时，里面有多少条待同步内容
+    pub clips: usize,
+    pub error: Option<String>,
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncStatus {
@@ -205,6 +222,12 @@ pub struct SyncStatus {
     pub last_error: Option<String>,
     /// 同网段发现的设备数（局域网直连可用性）
     pub lan_peers: usize,
+    /// 主密钥指纹，两台机器对比即可判断是否配到同一把密钥
+    pub key_fingerprint: Option<String>,
+    /// 本机发件箱里实际发了多少条（0 说明过滤后没东西可发）
+    pub own_clips: usize,
+    /// 共享目录下的全部发件箱文件（含自己那份）
+    pub peer_files: Vec<PeerFile>,
 }
 
 #[derive(serde::Serialize)]
@@ -247,23 +270,95 @@ pub fn sync_status(state: State<'_, Arc<AppState>>) -> Result<SyncStatus, String
     // 先取 lan 再取 sync：广播侧是 lan → sync 的顺序，反过来会死锁
     let lan_peers = state.lan.lock().map(|l| l.peers.len()).unwrap_or(0);
 
-    let rt = state.sync.lock().map_err(|e| e.to_string())?;
-    let mut peers: Vec<PeerStatus> = rt.peers.values().cloned().collect();
-    peers.sort_by(|a, b| a.name.cmp(&b.name));
+    let (enabled, key, last_push_at, last_pull_at, last_error, peers) = {
+        let rt = state.sync.lock().map_err(|e| e.to_string())?;
+        let mut peers: Vec<PeerStatus> = rt.peers.values().cloned().collect();
+        peers.sort_by(|a, b| a.name.cmp(&b.name));
+        (
+            rt.enabled,
+            rt.key,
+            rt.last_push_at,
+            rt.last_pull_at,
+            rt.last_error.clone(),
+            peers,
+        )
+    };
+
+    // 扫一遍共享目录：每个发件箱能不能解开、里面有多少条。
+    // 这是区分「没配对成功」和「配对成功但没东西可发」的唯一可靠办法。
+    let mut peer_files: Vec<PeerFile> = Vec::new();
+    let devices_dir = dir.join("JCopy").join("devices");
+    if let Ok(entries) = fs::read_dir(&devices_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("enc") {
+                continue;
+            }
+            let Some(id) = path.file_stem().and_then(|s| s.to_str()).map(str::to_string) else {
+                continue;
+            };
+
+            let meta = entry.metadata().ok();
+            let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+            let updated_at = meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+
+            let is_self = id == settings.device_id;
+            let mut decryptable = false;
+            let mut clips = 0usize;
+            let mut error = None;
+
+            match (key, fs::read(&path)) {
+                (None, _) => error = Some("本机还没有主密钥（未配对）".into()),
+                (Some(k), Ok(blob)) => match protocol::open_outbox(&k, &id, &blob) {
+                    Some(outbox) => {
+                        decryptable = true;
+                        clips = outbox.clips.len();
+                    }
+                    None if is_self => error = Some("本机发件箱解不开（密钥或文件异常）".into()),
+                    None => error = Some("解不开：这台机器的主密钥与对方不一致".into()),
+                },
+                (Some(_), Err(err)) => error = Some(format!("读取失败：{err}")),
+            }
+
+            peer_files.push(PeerFile {
+                id,
+                size,
+                updated_at,
+                is_self,
+                decryptable,
+                clips,
+                error,
+            });
+        }
+    }
+    peer_files.sort_by(|a, b| a.id.cmp(&b.id));
+    let own_clips = peer_files
+        .iter()
+        .find(|f| f.is_self)
+        .map(|f| f.clips)
+        .unwrap_or(0);
 
     Ok(SyncStatus {
-        enabled: rt.enabled,
-        paired: rt.key.is_some(),
+        enabled,
+        paired: key.is_some(),
         dir: dir.display().to_string(),
         dir_exists: dir.is_dir(),
         is_icloud,
         device_id: settings.device_id,
         device_name: settings.device_name,
         peers,
-        last_push_at: rt.last_push_at,
-        last_pull_at: rt.last_pull_at,
-        last_error: rt.last_error.clone(),
+        last_push_at,
+        last_pull_at,
+        last_error,
         lan_peers,
+        key_fingerprint: key.map(|k| crypto::fingerprint(&k)),
+        own_clips,
+        peer_files,
     })
 }
 

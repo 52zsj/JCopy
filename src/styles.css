@@ -1200,3 +1200,74 @@ mark {
 .seg button:hover:not(.on) {
   color: var(--text);
 }
+
+/* ---------- 0.8.3：同步自检面板 ---------- */
+
+.sync-diag {
+  margin: 6px 0 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--item-hover);
+  border: 1px solid var(--chip-border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.diag-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--text-dim);
+  font-size: calc(11px * var(--fs));
+}
+
+.diag-head code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: calc(12px * var(--fs));
+  letter-spacing: 0.06em;
+  color: var(--text);
+  background: var(--card-bg);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+
+.diag-hint {
+  color: var(--text-faint);
+}
+
+.diag-line {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: calc(11px * var(--fs));
+  color: var(--text-dim);
+}
+
+.diag-line.bad .diag-meta {
+  color: var(--danger);
+}
+
+.diag-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  min-width: 58px;
+  color: var(--text);
+}
+
+.diag-meta {
+  flex: 1;
+}
+
+.diag-time {
+  color: var(--text-faint);
+}
+
+.diag-warn {
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--hairline);
+  color: var(--danger);
+  font-size: calc(11px * var(--fs));
+  line-height: 1.5;
+}
