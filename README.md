@@ -140,7 +140,17 @@ macOS 的 dmg 由 `scripts/make-dmg.sh` 用 `hdiutil` 直接造，不走 `tauri 
 | 推 `v*` tag | 同上，并创建 GitHub Release、附上三个平台的安装包 |
 | 手动 workflow_dispatch | 同推 main |
 
-矩阵：`macos-14`（universal，同时出 Apple Silicon 与 Intel）、`windows-latest`（NSIS）、`ubuntu-22.04`（deb + AppImage）。
+矩阵共 4 个任务：
+
+| Runner | 产物 |
+|---|---|
+| `macos-14` | `JCopy-<版本>-arm64.dmg` / `.zip`（原生 Apple Silicon） |
+| `macos-14`（交叉到 x86_64） | `JCopy-<版本>-x64.dmg` / `.zip` |
+| `windows-latest` | `JCopy_<版本>_x64-setup.exe`（NSIS） |
+| `ubuntu-22.04` | `.deb` + `.AppImage` |
+
+macOS 不走 `--target universal-apple-darwin` 那条 lipo 合并路径：两个架构各出一个包，
+失败面更小，产物名也能直接看出架构。
 
 ### 发版
 
