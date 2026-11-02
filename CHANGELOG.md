@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.8.1
+
+工程化：三平台 CI、一键发版、本地打包命令。
+
+### 新增
+
+- **三平台 GitHub Actions**（`.github/workflows/release.yml`）：
+  `macos-14` 出 universal 包（同时覆盖 Apple Silicon 与 Intel）、`windows-latest` 出 NSIS 安装包、
+  `ubuntu-22.04` 出 deb 与 AppImage。推 main 只构建并留存 artifact，推 `v*` tag 才创建 Release
+- **一键发版** `npm run release:tag`：校验工作区干净、三处版本号一致、CHANGELOG 有当前版本、
+  tag 未被占用、处于 main 分支，通过后打附注 tag 并推送，由 CI 出包
+- **本地打包** `npm run dist:mac` / `dist:win` / `dist:linux` / `dist:all`，
+  底层 `scripts/build-all.mjs`；跨系统不支持时明确提示而不是打出坏包
+- **单元测试**：`src/format.ts` 的类型识别与配色表（7 条），接入 CI
+- `scripts/make-dmg.sh`：CI 与本地共用的 dmg 生成，绕开 Tauri 打包器的 AppleScript 依赖
+
+### 说明
+
+- Release 正文由 `scripts/changelog-section.mjs` 从 CHANGELOG 当前版本那节抽取
+- 版本号在 `package.json` / `tauri.conf.json` / `Cargo.toml` 三处，发版脚本会强校验一致性
+
 ## 0.8.0
 
 图片真正能跨设备同步了。之前只有文本走同步，图片根本没有出去。

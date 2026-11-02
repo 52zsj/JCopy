@@ -1,7 +1,7 @@
 {
   "name": "jcopy",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.8.1",
   "type": "module",
   "description": "跨平台轻量剪贴板共享工具",
   "scripts": {
@@ -11,7 +11,13 @@
     "tauri": "tauri",
     "app": "tauri dev",
     "app:build": "tauri build",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "notes:section": "node scripts/changelog-section.mjs",
+    "release:tag": "node scripts/release-tag.mjs",
+    "dist:mac": "node scripts/build-all.mjs --mac",
+    "dist:win": "node scripts/build-all.mjs --win",
+    "dist:linux": "node scripts/build-all.mjs --linux",
+    "dist:all": "node scripts/build-all.mjs --all"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

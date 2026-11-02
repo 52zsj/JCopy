@@ -1,0 +1,146 @@
+name: 构建与发布
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+# 同一分支的构建可以取消，但发布流程不打断
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+
+jobs:
+  build:
+    name: 构建（${{ matrix.label }}）
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 一台机器同时出 Apple Silicon 与 Intel 的包
+          - os: macos-14
+            label: macOS Universal
+            build-args: '--bundles app --target universal-apple-darwin'
+          - os: windows-latest
+            label: Windows x64
+            build-args: '--bundles nsis'
+          - os: ubuntu-22.04
+            label: Linux x64
+            build-args: '--bundles deb,appimage'
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 准备 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 准备 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # universal 包需要两个 macOS target
+          targets: ${{ matrix.os == 'macos-14' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust 构建缓存
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: 安装 Linux 系统依赖
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf build-essential
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 单元测试
+        shell: bash
+        run: npm test
+
+      - name: 编译并打包
+        shell: bash
+        # tauri.conf 里配了 beforeBuildCommand，前端会自动构建
+        run: npx tauri build ${{ matrix.build-args }}
+
+      - name: 生成 dmg 与 zip（macOS）
+        if: matrix.os == 'macos-14'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          APP="src-tauri/target/universal-apple-darwin/release/bundle/macos/JCopy.app"
+          bash scripts/make-dmg.sh "$APP" universal
+          mkdir -p "release/$VERSION"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "release/$VERSION/JCopy-$VERSION-universal.zip"
+
+      - name: 归集产物
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist-artifacts
+          case "${{ runner.os }}" in
+            macOS)
+              cp release/*/*.dmg release/*/*.zip dist-artifacts/
+              ;;
+            Windows)
+              find src-tauri/target/release/bundle/nsis -name '*-setup.exe' -exec cp {} dist-artifacts/ \;
+              ;;
+            Linux)
+              find src-tauri/target/release/bundle \( -name '*.deb' -o -name '*.AppImage' \) -exec cp {} dist-artifacts/ \;
+              ;;
+          esac
+          echo "--- 产物 ---"
+          ls -lh dist-artifacts
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: jcopy-${{ matrix.label }}
+          path: dist-artifacts/*
+          if-no-files-found: error
+
+  release:
+    name: 发布到 GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 准备 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 下载三平台产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 生成 Release 正文
+        id: notes
+        # 只取 CHANGELOG 当前版本那一节，避免把整份日志贴进 Release
+        run: node scripts/changelog-section.mjs --github-output >> "$GITHUB_OUTPUT"
+
+      - name: 创建 Release 并上传安装包
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.notes.outputs.body }}
+          files: artifacts/**/*
+          fail_on_unmatched_files: false

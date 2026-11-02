@@ -65,7 +65,7 @@ JCopy/
 
 ## 安装
 
-从 `release/0.8.0/` 取 dmg，拖进「应用程序」。
+从 `release/0.8.1/` 取 dmg 或 GitHub Releases，拖进「应用程序」。
 
 **首次打开会被 Gatekeeper 拦下** —— 当前包未做 Apple 开发者签名与公证：
 
@@ -104,6 +104,70 @@ JCOPY_SHOW_ON_START=1 npm run app # 启动即展开面板
 ```
 
 两者可以叠加。生产构建下 `JCOPY_SHOW_ON_START` 仍可用（便于排查用户环境），`JCOPY_NO_AUTOHIDE` 只在调试时用。
+
+## 打包与发版
+
+产物统一落在 `release/<版本>/`。
+
+### 本地打包
+
+```bash
+npm run dist:mac      # macOS：dmg + zip + 安装说明（在 macOS 上跑）
+npm run dist:win      # Windows：NSIS 安装包（在 Windows 上跑）
+npm run dist:linux    # Linux：deb + AppImage（在 Linux 上跑）
+npm run dist:all      # 当前系统支持的全部
+```
+
+底层是 `node scripts/build-all.mjs`，参数同上，另有 `--skip-build` 复用已构建的前端产物：
+
+```bash
+node scripts/build-all.mjs --mac --skip-build
+```
+
+**Tauri 不支持跨系统打包**：Windows 要 NSIS/WiX，Linux 要 webkit2gtk 与 dpkg，都无法从 macOS 交叉出包。
+所以在 Mac 上跑 `--win` / `--linux` 会明确提示跳过，而不是打出坏包。要一次拿全三平台，用下面的 CI。
+
+macOS 的 dmg 由 `scripts/make-dmg.sh` 用 `hdiutil` 直接造，不走 `tauri build --bundles dmg`——
+后者会调 AppleScript 驱动 Finder 摆窗口位置，在没有图形会话（CI / 无头）时报 `-10004` 并整体失败。
+
+### 三平台 CI
+
+`.github/workflows/release.yml` 会在三种情况下运行：
+
+| 触发 | 行为 |
+|---|---|
+| 推 main / PR | 三平台编译 + 单测 + 上传产物为 workflow artifact（不发 Release） |
+| 推 `v*` tag | 同上，并创建 GitHub Release、附上三个平台的安装包 |
+| 手动 workflow_dispatch | 同推 main |
+
+矩阵：`macos-14`（universal，同时出 Apple Silicon 与 Intel）、`windows-latest`（NSIS）、`ubuntu-22.04`（deb + AppImage）。
+
+### 发版
+
+```bash
+npm run release:tag -- --dry-run   # 只做检查，不打 tag
+npm run release:tag                # 打 tag 并推送，触发 CI 出包与 Release
+```
+
+脚本会先拦住这几类问题，任一不满足直接退出：
+
+1. 工作区有未提交改动
+2. 版本号不一致——`package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` 三处必须相同
+   （Tauri 的产物版本取自 `tauri.conf.json`，漏改会打出旧版本号）
+3. `CHANGELOG.md` 里没有 `## <当前版本>` 这一节（Release 正文从那里取）
+4. tag 已存在（本地或远端）
+5. 当前不在 `main` 分支
+
+`CHANGELOG.md` 的写法直接决定 Release 长什么样，用 `npm run notes:section` 可以预览：
+
+```markdown
+## 0.8.1
+
+一句话概括这版做了什么。
+
+### 新增
+- ...
+```
 
 ## 快捷键
 
