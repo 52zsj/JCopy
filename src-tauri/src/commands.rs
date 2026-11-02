@@ -203,6 +203,11 @@ pub struct PeerFile {
     pub decryptable: bool,
     /// 能解开时，里面有多少条待同步内容
     pub clips: usize,
+    /// 其中图片有几张
+    pub images: usize,
+    /// 图片条目里有几个原图文件在共享目录里找不到——
+    /// 大于 0 说明卡在云盘传输，不是配对问题
+    pub missing_images: usize,
     /// 超过 10 分钟没更新且解不开：多半是以前配对留下的旧文件，可以忽略
     pub stale: bool,
     pub error: Option<String>,
@@ -290,6 +295,7 @@ pub fn sync_status(state: State<'_, Arc<AppState>>) -> Result<SyncStatus, String
     // 这是区分「没配对成功」和「配对成功但没东西可发」的唯一可靠办法。
     let mut peer_files: Vec<PeerFile> = Vec::new();
     let devices_dir = dir.join("JCopy").join("devices");
+    let shared_images = dir.join("JCopy").join("images");
     if let Ok(entries) = fs::read_dir(&devices_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -312,6 +318,8 @@ pub fn sync_status(state: State<'_, Arc<AppState>>) -> Result<SyncStatus, String
             let is_self = id == settings.device_id;
             let mut decryptable = false;
             let mut clips = 0usize;
+            let mut images = 0usize;
+            let mut missing_images = 0usize;
             let mut error = None;
 
             match (key, fs::read(&path)) {
@@ -320,6 +328,25 @@ pub fn sync_status(state: State<'_, Arc<AppState>>) -> Result<SyncStatus, String
                     Some(outbox) => {
                         decryptable = true;
                         clips = outbox.clips.len();
+                        // 图片条目只带文件名，原图在 <目录>/JCopy/images 下。
+                        // 数一下有几个原图还没到位——这能区分「配对没成功」和「云盘还在传」
+                        for clip in outbox.clips.iter().filter(|c| c.kind == "image") {
+                            images += 1;
+                            let present = clip
+                                .image_ref
+                                .as_deref()
+                                .map(|r| {
+                                    std::path::Path::new(r)
+                                        .file_name()
+                                        .and_then(|s| s.to_str())
+                                        .map(|name| shared_images.join(name).is_file())
+                                        .unwrap_or(false)
+                                })
+                                .unwrap_or(false);
+                            if !present {
+                                missing_images += 1;
+                            }
+                        }
                     }
                     None if is_self => error = Some("本机发件箱解不开（密钥或文件异常）".into()),
                     None => error = Some("解不开：这台机器的主密钥与对方不一致".into()),
@@ -343,6 +370,8 @@ pub fn sync_status(state: State<'_, Arc<AppState>>) -> Result<SyncStatus, String
                 is_self,
                 decryptable,
                 clips,
+                images,
+                missing_images,
                 stale,
                 error,
             });

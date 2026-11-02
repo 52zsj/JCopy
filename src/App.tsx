@@ -666,12 +666,20 @@ export default function App() {
                     <div
                       key={file.id}
                       className={`diag-line${
-                        file.decryptable ? "" : file.stale ? " stale" : " bad"
+                        file.decryptable ? (file.missingImages > 0 ? " pending" : "") : file.stale ? " stale" : " bad"
                       }`}
                     >
                       <span className="diag-id">{file.isSelf ? "本机" : file.id.slice(0, 8)}</span>
                       <span className="diag-meta">
-                        {file.decryptable ? `${file.clips} 条` : (file.error ?? "解不开")}
+                        {file.decryptable
+                          ? `${file.clips} 条${
+                              file.images > 0 ? ` · ${file.images} 张图` : ""
+                            }${
+                              file.missingImages > 0
+                                ? ` · ${file.missingImages} 张原图未到云盘`
+                                : ""
+                            }`
+                          : (file.error ?? "解不开")}
                       </span>
                       <span className="diag-time">
                         {file.updatedAt ? relativeTime(file.updatedAt) : "—"}
@@ -685,6 +693,14 @@ export default function App() {
                     <div className="diag-warn">
                       对方的发件箱解不开，说明两台机器的主密钥不是同一把。
                       请在 A 机器点「生成配对码」，再到 B 机器输入同一个 6 位码重新配对。
+                    </div>
+                  )}
+
+                  {(sync.peerFiles ?? []).some((f) => f.missingImages > 0) && (
+                    <div className="diag-note">
+                      发件箱里已经有图片条目，但原图还在云盘上传/下载中。
+                      图片要单独传原图，比文本慢，几 MB 通常 10 秒到 2 分钟；
+                      局域网直连不传图片，只走云盘。
                     </div>
                   )}
                 </div>

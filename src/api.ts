@@ -56,6 +56,10 @@ export type PeerFile = {
   isSelf: boolean;
   decryptable: boolean;
   clips: number;
+  /** 其中图片张数 */
+  images: number;
+  /** 有图但原图文件还没到云盘 */
+  missingImages: number;
   /** 解不开且久未更新：上一次配对留下的旧文件，可忽略 */
   stale: boolean;
   error: string | null;

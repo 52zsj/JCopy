@@ -1287,3 +1287,21 @@ mark {
 .rail {
   scroll-padding-inline: 20px;
 }
+
+/* 图片原图还在云盘传输：用琥珀色，区别于"解不开"的红色错误 */
+.diag-line.pending .diag-meta {
+  color: #b26a00;
+}
+
+[data-theme="dark"] .diag-line.pending .diag-meta {
+  color: #e0a94f;
+}
+
+.diag-note {
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--hairline);
+  color: var(--text-faint);
+  font-size: calc(11px * var(--fs));
+  line-height: 1.5;
+}

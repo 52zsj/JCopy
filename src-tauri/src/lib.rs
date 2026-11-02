@@ -173,7 +173,10 @@ fn probe_dom(app: &tauri::AppHandle) {
                 window.__TAURI_INTERNALS__.invoke('sync_status').then((st) => {
                     const files = (st.peerFiles || []).map((f) => {
                         const tag = f.isSelf ? 'self' : f.id.slice(0, 6);
-                        return tag + ':' + (f.decryptable ? f.clips + '条' : f.stale ? 'STALE' : 'BAD');
+                        return tag + ':' + (f.decryptable
+                            ? f.clips + '条' + (f.images ? '/' + f.images + '图' : '')
+                                + (f.missingImages ? '(缺' + f.missingImages + ')' : '')
+                            : f.stale ? 'STALE' : 'BAD');
                     }).join(',');
                     report('sync fp=' + (st.keyFingerprint || '-') + ' own=' + st.ownClips
                         + ' files=[' + files + '] err=' + (st.lastError || '-'));
