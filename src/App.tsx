@@ -604,7 +604,9 @@ export default function App() {
                   {(sync.peerFiles ?? []).map((file) => (
                     <div
                       key={file.id}
-                      className={`diag-line${file.decryptable ? "" : " bad"}`}
+                      className={`diag-line${
+                        file.decryptable ? "" : file.stale ? " stale" : " bad"
+                      }`}
                     >
                       <span className="diag-id">{file.isSelf ? "本机" : file.id.slice(0, 8)}</span>
                       <span className="diag-meta">
@@ -616,7 +618,9 @@ export default function App() {
                     </div>
                   ))}
 
-                  {(sync.peerFiles ?? []).some((f) => !f.isSelf && !f.decryptable) && (
+                  {(sync.peerFiles ?? []).some(
+                    (f) => !f.isSelf && !f.decryptable && !f.stale,
+                  ) && (
                     <div className="diag-warn">
                       对方的发件箱解不开，说明两台机器的主密钥不是同一把。
                       请在 A 机器点「生成配对码」，再到 B 机器输入同一个 6 位码重新配对。

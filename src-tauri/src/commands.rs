@@ -203,6 +203,8 @@ pub struct PeerFile {
     pub decryptable: bool,
     /// 能解开时，里面有多少条待同步内容
     pub clips: usize,
+    /// 超过 10 分钟没更新且解不开：多半是以前配对留下的旧文件，可以忽略
+    pub stale: bool,
     pub error: Option<String>,
 }
 
@@ -325,6 +327,15 @@ pub fn sync_status(state: State<'_, Arc<AppState>>) -> Result<SyncStatus, String
                 (Some(_), Err(err)) => error = Some(format!("读取失败：{err}")),
             }
 
+            // 解不开、又不是自己写的、而且十分钟没动过 → 多半是上一次配对留下的旧文件。
+            // 这类不该再标红吓人，功能上本来就忽略它。
+            let stale = !decryptable
+                && !is_self
+                && protocol::db_now_ms() - updated_at > 10 * 60 * 1000;
+            if stale {
+                error = Some("旧配对残留，可忽略".into());
+            }
+
             peer_files.push(PeerFile {
                 id,
                 size,
@@ -332,6 +343,7 @@ pub fn sync_status(state: State<'_, Arc<AppState>>) -> Result<SyncStatus, String
                 is_self,
                 decryptable,
                 clips,
+                stale,
                 error,
             });
         }

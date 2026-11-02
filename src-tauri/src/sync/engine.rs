@@ -7,7 +7,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tauri::{AppHandle, Emitter};
 
 use super::crypto;
@@ -24,6 +24,8 @@ const MAX_IMAGE_SYNC_BYTES: i64 = 12 * 1024 * 1024;
 const MAX_PEER_FILES: usize = 16;
 /// 共享图片保留天数。iCloud 空间不是无限的，只清自己写的那批
 const SHARED_IMAGE_TTL_DAYS: u64 = 30;
+/// 发件箱多久没更新就算"旧配对残留"（解不开也不再报警）
+const STALE_OUTBOX_SECS: u64 = 10 * 60;
 
 pub fn spawn(app: AppHandle, state: Arc<AppState>) {
     thread::spawn(move || loop {
@@ -201,7 +203,10 @@ fn pull(
         // 解不开基本只有一种原因：两台机器的主密钥不一致（各自生成过配对码）。
         // 以前这里静默 continue，界面看不出任何异常——现在记下来，让用户能看见。
         let Some(outbox) = protocol::open_outbox(key, &peer_id, &blob) else {
-            undecryptable.push(peer_id.clone());
+            // 但十分钟没动过的解不开文件属于上次配对的残留，不该一直报警
+            if !is_stale(&path) {
+                undecryptable.push(peer_id.clone());
+            }
             continue;
         };
 
@@ -350,6 +355,20 @@ fn prune_shared_images(dir: &Path, own_id: &str) {
             let _ = fs::remove_file(entry.path());
         }
     }
+}
+
+/// 文件超过十分钟没更新：多半是上一次配对的残留，不再当作"当前配对失败"
+fn is_stale(path: &Path) -> bool {
+    let Ok(meta) = fs::metadata(path) else {
+        return false;
+    };
+    let Ok(modified) = meta.modified() else {
+        return false;
+    };
+    SystemTime::now()
+        .duration_since(modified)
+        .map(|age| age.as_secs() > STALE_OUTBOX_SECS)
+        .unwrap_or(false)
 }
 
 /// 先写临时文件再改名：避免对端读到写了一半的密文

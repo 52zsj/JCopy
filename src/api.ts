@@ -56,6 +56,8 @@ export type PeerFile = {
   isSelf: boolean;
   decryptable: boolean;
   clips: number;
+  /** 解不开且久未更新：上一次配对留下的旧文件，可忽略 */
+  stale: boolean;
   error: string | null;
 };
 
