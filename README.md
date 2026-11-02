@@ -1,10 +1,12 @@
 # JCopy
 
+![构建与发布](https://github.com/52zsj/JCopy/actions/workflows/release.yml/badge.svg)
+
 跨平台轻量剪贴板共享工具。让 Mac 与 Windows 之间的复制粘贴，像在同一台机器上一样。
 
 - 需求规格：[docs/01-requirements.md](docs/01-requirements.md)
 - 技术栈：Tauri 2 + Rust 平台壳 + TypeScript/React 界面
-- 当前版本：0.6.0（本机闭环 + iCloud 同步 + 局域网直连 + 全宽卡片条 + 图片）
+- 当前版本：0.8.1（本机闭环 + iCloud 同步 + 局域网直连 + 全宽卡片条 + 图片同步）
 
 ## 现在能做什么
 
