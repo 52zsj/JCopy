@@ -109,6 +109,9 @@ pub struct Settings {
     pub theme: String,
     /// 字号档位：small / medium / large
     pub font_size: String,
+    /// 图片同步策略：off 不同步 / pinned 仅收藏 / all 全部。
+    /// 默认 pinned——图片体积大，默认全同步会把 iCloud 塞满。
+    pub image_sync: String,
 }
 
 impl Default for Settings {
@@ -126,6 +129,7 @@ impl Default for Settings {
             blacklist: default_blacklist(),
             theme: "system".into(),
             font_size: "medium".into(),
+            image_sync: "pinned".into(),
         }
     }
 }

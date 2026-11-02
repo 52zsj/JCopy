@@ -384,6 +384,22 @@ export default function App() {
                 />
               </div>
 
+              <div className="row static">
+                <span>
+                  图片同步
+                  <em>图片体积大，默认只有收藏（⌘P）过的才会同步到 iCloud</em>
+                </span>
+                <Seg
+                  value={settings?.imageSync ?? "pinned"}
+                  options={[
+                    { value: "off", label: "不同步" },
+                    { value: "pinned", label: "仅收藏" },
+                    { value: "all", label: "全部" },
+                  ]}
+                  onChange={(v) => void patchSettings({ imageSync: v })}
+                />
+              </div>
+
               <label className="field">
                 <span className="field-label">设备名称</span>
                 <input

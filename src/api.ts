@@ -29,6 +29,8 @@ export type Settings = {
   theme: string;
   /** 字号档位：small / medium / large */
   fontSize: string;
+  /** 图片同步策略：off / pinned / all */
+  imageSync: string;
 };
 
 export type Bootstrap = {

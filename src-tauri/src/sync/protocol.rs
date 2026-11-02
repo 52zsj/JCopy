@@ -24,10 +24,27 @@ pub struct DeviceInfo {
 pub struct SyncClip {
     pub id: String,
     pub hash: String,
+    /// "text" | "image"。老版本的发件箱没有这个字段，缺省按文本处理
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
     pub text: String,
+    /// 图片在共享目录 images/ 下的文件名（只存文件名，不存路径）。
+    /// 图片本体不进发件箱，否则发件箱会随图片数量线性膨胀。
+    #[serde(default)]
+    pub image_ref: Option<String>,
+    /// 图片尺寸，形如 "1920 × 1080"
+    #[serde(default)]
+    pub dims: Option<String>,
     pub source_app: Option<String>,
     pub created_at: i64,
     pub pinned: bool,
+}
+
+impl SyncClip {
+    pub fn is_image(&self) -> bool {
+        self.kind == "image"
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -143,7 +160,10 @@ mod tests {
             clips: vec![SyncClip {
                 id: "c1".into(),
                 hash: "h1".into(),
+                kind: "text".into(),
                 text: "来自 A 的复制内容".into(),
+                image_ref: None,
+                dims: None,
                 source_app: Some("com.apple.Safari".into()),
                 created_at: 2,
                 pinned: false,

@@ -130,7 +130,10 @@ pub fn spawn(app: AppHandle, state: Arc<AppState>) {
                         let payload = crate::sync::SyncClip {
                             id: clip.id.clone(),
                             hash: clip.hash.clone(),
+                            kind: "text".into(),
                             text: clip.content.clone(),
+                            image_ref: None,
+                            dims: None,
                             source_app: clip.source_app.clone(),
                             created_at: clip.created_at,
                             pinned: clip.pinned,
@@ -174,4 +177,20 @@ fn save_image(dir: &Path, img: &arboard::ImageData) -> Option<(String, String, i
         format!("{} × {}", img.width, img.height),
         bytes,
     ))
+}
+
+/// 从已存在的 PNG 生成缩略图。同步拉取回来的图片走这条路，
+/// 缩略图不参与传输，本地重新算一遍即可。
+pub fn make_thumbnail(png_path: &Path, thumb_path: &Path) -> Option<()> {
+    let img = image::open(png_path).ok()?.to_rgba8();
+    let (width, height) = img.dimensions();
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let thumb_w = THUMB_WIDTH.min(width).max(1);
+    let ratio = thumb_w as f32 / width as f32;
+    let thumb_h = ((height as f32) * ratio).round().max(1.0) as u32;
+    let thumb = image::imageops::resize(&img, thumb_w, thumb_h, image::imageops::FilterType::Triangle);
+    thumb.save(thumb_path).ok()?;
+    Some(())
 }
