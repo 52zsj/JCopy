@@ -18,7 +18,8 @@ use crate::db;
 const TICK: Duration = Duration::from_secs(3);
 const OUTBOX_LIMIT: usize = 200;
 /// 超过这个体积的条目只留在本机，不参与同步
-const MAX_SYNC_BYTES: i64 = 64 * 1024;
+// 单条文本上限。原来 64KB，剪一段长日志/代码就超了，而且是静默不发
+const MAX_SYNC_BYTES: i64 = 256 * 1024;
 /// 图片单独一档上限：本机采集上限也是 12MB，两端对齐
 const MAX_IMAGE_SYNC_BYTES: i64 = 12 * 1024 * 1024;
 const MAX_PEER_FILES: usize = 16;
@@ -170,6 +171,10 @@ fn push(
         }
     }
 
+    // 移动进 outbox 之前先记数，供界面展示"这次到底发了什么"
+    let clip_count = items.len();
+    let image_count = items.iter().filter(|clip| clip.kind == "image").count();
+
     let outbox = Outbox {
         v: protocol::PROTOCOL_VERSION,
         device: device.clone(),
@@ -184,6 +189,9 @@ fn push(
     let mut rt = state.sync.lock().map_err(|e| e.to_string())?;
     rt.last_push_hash = digest;
     rt.last_push_at = protocol::db_now_ms();
+    rt.last_push_clips = clip_count;
+    rt.last_push_images = image_count;
+    rt.pending_images = 0;
     Ok(())
 }
 
@@ -201,6 +209,9 @@ fn pull(
 
     let mut found: Vec<PeerStatus> = Vec::new();
     let mut undecryptable: Vec<String> = Vec::new();
+    // 本轮累计（写进 runtime 后按增量累加到总数）
+    let mut total_received = 0usize;
+    let mut total_images = 0usize;
 
     for entry in entries.flatten().take(MAX_PEER_FILES) {
         let path = entry.path();
@@ -226,6 +237,7 @@ fn pull(
         };
 
         let mut received = 0usize;
+        let mut received_images = 0usize;
         for clip in &outbox.clips {
             let added = if clip.is_image() {
                 pull_image(state, root, clip, &outbox.device.name)?
@@ -248,9 +260,14 @@ fn pull(
             };
             if let Some(saved) = added {
                 received += 1;
+                if saved.kind == "image" {
+                    received_images += 1;
+                }
                 let _ = app.emit("clip-added", saved.view());
             }
         }
+        total_received += received;
+        total_images += received_images;
 
         found.push(PeerStatus {
             id: peer_id,
@@ -264,6 +281,8 @@ fn pull(
 
     let mut rt = state.sync.lock().map_err(|e| e.to_string())?;
     rt.last_pull_at = protocol::db_now_ms();
+    rt.pulled_clips += total_received;
+    rt.pulled_images += total_images;
     rt.last_error = if undecryptable.is_empty() {
         None
     } else {

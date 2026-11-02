@@ -82,6 +82,14 @@ export type SyncStatus = {
   keyFingerprint: string | null;
   /** 本机发件箱里实际发布了多少条 */
   ownClips: number;
+  /** 最近一次发出去：总条数 / 其中图片张数 */
+  pushedClips: number;
+  pushedImages: number;
+  /** 本次启动以来累计收到：总条数 / 其中图片张数 */
+  pulledClips: number;
+  pulledImages: number;
+  /** 有图片条目但原图还没落盘，正常为 0 */
+  pendingImages: number;
   peerFiles: PeerFile[];
 };
 
@@ -97,13 +105,15 @@ export const api = {
   deleteClip: (id: string) => invoke<void>("delete_clip", { id }),
   clearAll: () => invoke<void>("clear_all"),
   togglePin: (id: string) => invoke<boolean>("toggle_pin", { id }),
+  revealClip: (id: string) => invoke<void>("reveal_clip", { id }),
   updateSettings: (settings: Settings) => invoke<Settings>("update_settings", { settings }),
   setPaused: (paused: boolean) => invoke<boolean>("set_paused", { paused }),
   hidePanel: () => invoke<void>("hide_panel"),
   openAccessibility: () => invoke<void>("open_accessibility_settings"),
   setPanelMode: (mode: "clips" | "settings") => invoke<void>("set_panel_mode", { mode }),
 
-  syncStatus: () => invoke<SyncStatus>("sync_status"),
+  // deep=false 只读运行时计数，适合每几秒轮询；deep=true 会逐个发件箱解密扫描
+  syncStatus: (deep = false) => invoke<SyncStatus>("sync_status", { deep }),
   syncSetDir: (path: string) => invoke<void>("sync_set_dir", { path }),
   syncSetEnabled: (enabled: boolean) => invoke<void>("sync_set_enabled", { enabled }),
   syncCreateInvite: () => invoke<InviteInfo>("sync_create_invite"),

@@ -127,6 +127,52 @@ pub fn toggle_pin(state: State<'_, Arc<AppState>>, id: String) -> Result<bool, S
     db::toggle_pin(&conn, &id).map_err(|e| e.to_string())
 }
 
+/// 在系统文件管理器里定位这条记录的图片文件。文本条目没有对应文件。
+#[tauri::command]
+pub fn reveal_clip(state: State<'_, Arc<AppState>>, id: String) -> Result<(), String> {
+    let clip = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        db::get(&conn, &id)
+            .map_err(|e| e.to_string())?
+            .ok_or("条目不存在")?
+    };
+    if clip.kind != "image" {
+        return Err("只有图片条目有对应文件".into());
+    }
+    if !std::path::Path::new(&clip.content).is_file() {
+        return Err("原图已被清理".into());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .args(["-R", &clip.content])
+            .status()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // explorer /select, 成功时返回码也不是 0，所以不检查 status
+        let _ = std::process::Command::new("explorer")
+            .arg(format!("/select,{}", clip.content))
+            .spawn();
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let parent = std::path::Path::new(&clip.content)
+            .parent()
+            .ok_or("路径无效")?;
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .status()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub fn update_settings(
     state: State<'_, Arc<AppState>>,
@@ -233,7 +279,15 @@ pub struct SyncStatus {
     pub key_fingerprint: Option<String>,
     /// 本机发件箱里实际发了多少条（0 说明过滤后没东西可发）
     pub own_clips: usize,
-    /// 共享目录下的全部发件箱文件（含自己那份）
+    /// 最近一次发出去的内容：总条数 / 其中图片张数
+    pub pushed_clips: usize,
+    pub pushed_images: usize,
+    /// 本次启动以来累计收到：总条数 / 其中图片张数
+    pub pulled_clips: usize,
+    pub pulled_images: usize,
+    /// 有图片条目但原图还没落盘（正常应为 0）
+    pub pending_images: usize,
+    /// 共享目录下的全部发件箱文件（含自己那份）；只有 deep 模式才扫描
     pub peer_files: Vec<PeerFile>,
 }
 
@@ -267,7 +321,12 @@ fn decode_b64_key(b64: &str) -> Option<crypto::Key> {
 }
 
 #[tauri::command]
-pub fn sync_status(state: State<'_, Arc<AppState>>) -> Result<SyncStatus, String> {
+pub fn sync_status(
+    state: State<'_, Arc<AppState>>,
+    deep: Option<bool>,
+) -> Result<SyncStatus, String> {
+    // deep = 逐个发件箱解密扫描，只在设置页打开时用；主界面的状态条走轻量模式
+    let deep = deep.unwrap_or(false);
     let settings = state.settings.lock().map_err(|e| e.to_string())?.clone();
     let dir = current_sync_dir(&state);
     let is_icloud = crate::state::detect_icloud_dir()
@@ -277,7 +336,19 @@ pub fn sync_status(state: State<'_, Arc<AppState>>) -> Result<SyncStatus, String
     // 先取 lan 再取 sync：广播侧是 lan → sync 的顺序，反过来会死锁
     let lan_peers = state.lan.lock().map(|l| l.peers.len()).unwrap_or(0);
 
-    let (enabled, key, last_push_at, last_pull_at, last_error, peers) = {
+    let (
+        enabled,
+        key,
+        last_push_at,
+        last_pull_at,
+        last_error,
+        peers,
+        pushed_clips,
+        pushed_images,
+        pulled_clips,
+        pulled_images,
+        pending_images,
+    ) = {
         let rt = state.sync.lock().map_err(|e| e.to_string())?;
         let mut peers: Vec<PeerStatus> = rt.peers.values().cloned().collect();
         peers.sort_by(|a, b| a.name.cmp(&b.name));
@@ -288,15 +359,23 @@ pub fn sync_status(state: State<'_, Arc<AppState>>) -> Result<SyncStatus, String
             rt.last_pull_at,
             rt.last_error.clone(),
             peers,
+            rt.last_push_clips,
+            rt.last_push_images,
+            rt.pulled_clips,
+            rt.pulled_images,
+            rt.pending_images,
         )
     };
 
     // 扫一遍共享目录：每个发件箱能不能解开、里面有多少条。
     // 这是区分「没配对成功」和「配对成功但没东西可发」的唯一可靠办法。
+    // deep 只在设置页打开时传 true——它要把每个发件箱都解密一遍，不适合每 3 秒轮询。
     let mut peer_files: Vec<PeerFile> = Vec::new();
+    let mut own_clips = pushed_clips;
     let devices_dir = dir.join("JCopy").join("devices");
     let shared_images = dir.join("JCopy").join("images");
-    if let Ok(entries) = fs::read_dir(&devices_dir) {
+    if deep {
+        if let Ok(entries) = fs::read_dir(&devices_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("enc") {
@@ -376,13 +455,13 @@ pub fn sync_status(state: State<'_, Arc<AppState>>) -> Result<SyncStatus, String
                 error,
             });
         }
+        }
     }
     peer_files.sort_by(|a, b| a.id.cmp(&b.id));
-    let own_clips = peer_files
-        .iter()
-        .find(|f| f.is_self)
-        .map(|f| f.clips)
-        .unwrap_or(0);
+    // deep 扫描成功时以自己的发件箱为准；否则沿用最近一次 push 的运行时计数
+    if let Some(file) = peer_files.iter().find(|f| f.is_self) {
+        own_clips = file.clips;
+    }
 
     Ok(SyncStatus {
         enabled,
@@ -400,6 +479,11 @@ pub fn sync_status(state: State<'_, Arc<AppState>>) -> Result<SyncStatus, String
         key_fingerprint: key.map(|k| crypto::fingerprint(&k)),
         own_clips,
         peer_files,
+        pushed_clips,
+        pushed_images,
+        pulled_clips,
+        pulled_images,
+        pending_images,
     })
 }
 

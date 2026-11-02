@@ -45,11 +45,18 @@ pub fn spawn(app: AppHandle, state: Arc<AppState>) {
                 last_seq = Some(seq);
             }
 
-            let text = clipboard.get_text().ok().filter(|t| !t.trim().is_empty());
-            let image = if text.is_none() {
-                clipboard.get_image().ok()
-            } else {
+            // 先图后文。不能反过来：从浏览器、微信、QQ 里「复制图片」时，
+            // 剪贴板里同时存在图像和文本（HTML 片段 / 图片 URL / alt 文字），
+            // 以前先读文本、一读到就跳过图片，结果是这些图片**永远进不了历史**
+            // ——表现就是"文本能同步，图片压根没有条目"。
+            let image = clipboard
+                .get_image()
+                .ok()
+                .filter(|img| !img.bytes.is_empty());
+            let text = if image.is_some() {
                 None
+            } else {
+                clipboard.get_text().ok().filter(|t| !t.trim().is_empty())
             };
             if text.is_none() && image.is_none() {
                 continue;

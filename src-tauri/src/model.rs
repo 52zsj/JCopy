@@ -139,7 +139,9 @@ impl Default for Settings {
             blacklist: default_blacklist(),
             theme: "system".into(),
             font_size: "medium".into(),
-            image_sync: "pinned".into(),
+            // 默认同步全部图片（12MB 以内）。原来默认 "pinned"（只有收藏过的才发），
+            // 结果是用户复制一张图，另一台毫无反应，还以为功能坏了。
+            image_sync: "all".into(),
         }
     }
 }

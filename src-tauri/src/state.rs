@@ -38,6 +38,14 @@ pub struct SyncRuntime {
     pub last_pull_at: i64,
     /// 上次清理共享目录过期图片的时间，避免每轮都去扫目录
     pub last_prune_at: i64,
+    /// 最近一次发件箱里实际写了多少条 / 其中几张图
+    pub last_push_clips: usize,
+    pub last_push_images: usize,
+    /// 本次启动以来累计从对端收下多少条 / 其中几张图
+    pub pulled_clips: usize,
+    pub pulled_images: usize,
+    /// 本机发件箱里有图片条目、但原图还没落进共享目录的张数（正常应为 0）
+    pub pending_images: usize,
     pub last_error: Option<String>,
     pub peers: HashMap<String, PeerStatus>,
 }

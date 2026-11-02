@@ -69,6 +69,7 @@ pub fn run() {
             commands::delete_clip,
             commands::clear_all,
             commands::toggle_pin,
+            commands::reveal_clip,
             commands::update_settings,
             commands::set_paused,
             commands::hide_panel,
@@ -170,7 +171,7 @@ fn probe_dom(app: &tauri::AppHandle) {
 
             // 同步自检：等一轮 push/pull 之后再查，否则数据还没写出来
             setTimeout(() => {
-                window.__TAURI_INTERNALS__.invoke('sync_status').then((st) => {
+                window.__TAURI_INTERNALS__.invoke('sync_status', { deep: true }).then((st) => {
                     const files = (st.peerFiles || []).map((f) => {
                         const tag = f.isSelf ? 'self' : f.id.slice(0, 6);
                         return tag + ':' + (f.decryptable
@@ -200,6 +201,34 @@ fn probe_dom(app: &tauri::AppHandle) {
                         + ' marks=' + document.querySelectorAll('mark').length);
                 }, 400);
             }, 900);
+
+            // 右键菜单：先清空搜索（否则可能一张卡都没有），再派发 contextmenu
+            setTimeout(() => {
+                const box = document.querySelector('input');
+                if (box && box.value) {
+                    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                    setter.call(box, '');
+                    box.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                setTimeout(() => {
+                const card = document.querySelector('.card');
+                if (!card) {
+                    report('menu: 没有卡片');
+                    return;
+                }
+                card.dispatchEvent(new MouseEvent('contextmenu', {
+                    bubbles: true, cancelable: true, clientX: 240, clientY: 160,
+                }));
+                setTimeout(() => {
+                    const buttons = Array.from(document.querySelectorAll('.ctx-menu button'))
+                        .map((b) => b.textContent.trim());
+                    report('chip=' + document.querySelectorAll('.sync-chip').length
+                        + ' menu=[' + buttons.join(',') + ']');
+                    const mask = document.querySelector('.ctx-mask');
+                    if (mask) mask.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                }, 250);
+                }, 400);
+            }, 5200);
         })()"#;
         let _ = window.eval(script);
     });

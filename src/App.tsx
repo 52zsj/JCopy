@@ -33,6 +33,8 @@ export default function App() {
   const [now, setNow] = useState(() => Date.now());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // 卡片的右键菜单：位置 + 作用对象
+  const [menu, setMenu] = useState<{ x: number; y: number; clip: ClipView } | null>(null);
   const [sync, setSync] = useState<SyncStatus | null>(null);
   const [invite, setInvite] = useState<InviteInfo | null>(null);
   const [joinOpen, setJoinOpen] = useState(false);
@@ -219,6 +221,18 @@ export default function App() {
     setClips((prev) => prev.filter((c) => c.id !== id));
   }, []);
 
+  const revealFile = useCallback(async (id: string) => {
+    try {
+      await api.revealClip(id);
+    } catch (error) {
+      setToast(typeof error === "string" ? error : "打开失败");
+    }
+  }, []);
+
+  const openMenu = useCallback((clip: ClipView, x: number, y: number) => {
+    setMenu({ clip, x, y });
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.isComposing) return;
@@ -226,6 +240,10 @@ export default function App() {
 
       if (event.key === "Escape") {
         event.preventDefault();
+        if (menu) {
+          setMenu(null);
+          return;
+        }
         if (settingsOpen) {
           setSettingsOpen(false);
           requestAnimationFrame(() => inputRef.current?.focus());
@@ -280,22 +298,22 @@ export default function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [active, filtered, paste, removeClip, settingsOpen, togglePin]);
+  }, [active, filtered, menu, paste, removeClip, settingsOpen, togglePin]);
 
-  // 设置页打开时才轮询同步状态，关闭即停
+  // 同步状态常驻轮询：主界面的状态条要能实时反映"发出去几条、收到几条、几张图"。
+  // deep 只在设置页打开时为 true——它要逐个发件箱解密，不能每 3 秒都做。
   useEffect(() => {
-    if (!settingsOpen) return;
     let alive = true;
     const load = async () => {
       try {
-        const next = await api.syncStatus();
+        const next = await api.syncStatus(settingsOpen);
         if (alive) setSync(next);
       } catch {
         // 同步状态读不到不影响本机使用
       }
     };
     void load();
-    const timer = setInterval(load, 3000);
+    const timer = setInterval(load, settingsOpen ? 3000 : 5000);
     return () => {
       alive = false;
       clearInterval(timer);
@@ -448,10 +466,10 @@ export default function App() {
               <div className="row static">
                 <span>
                   图片同步
-                  <em>图片体积大，默认只有收藏（⌘P）过的才会同步到 iCloud</em>
+                  <em>默认同步 12MB 以内的图片；怕占云盘空间可以改成「仅收藏」</em>
                 </span>
                 <Seg
-                  value={settings?.imageSync ?? "pinned"}
+                  value={settings?.imageSync ?? "all"}
                   options={[
                     { value: "off", label: "不同步" },
                     { value: "pinned", label: "仅收藏" },
@@ -734,6 +752,30 @@ export default function App() {
                 <span className="brand">JCopy</span>
                 <span className="count">{filtered.length}</span>
                 {paused && <span className="paused-badge">已暂停</span>}
+                {sync?.enabled && sync.paired && (
+                  <button
+                    className={`sync-chip${
+                      sync.pendingImages > 0 ? " pending" : sync.lastError ? " bad" : " ok"
+                    }`}
+                    title={
+                      sync.lastError ??
+                      `发出 ${sync.pushedClips} 条（${sync.pushedImages} 图）· 收到 ${sync.pulledClips} 条（${sync.pulledImages} 图）` +
+                        (sync.pendingImages > 0
+                          ? ` · ${sync.pendingImages} 张原图待传`
+                          : "") +
+                        " · 点击打开同步设置"
+                    }
+                    onClick={() => setSettingsOpen(true)}
+                  >
+                    <i />
+                    <span>{sync.lastError ? "同步异常" : `↑${sync.pushedClips} ↓${sync.pulledClips}`}</span>
+                    {(sync.pushedImages > 0 || sync.pulledImages > 0) && (
+                      <em>
+                        图 {sync.pushedImages}/{sync.pulledImages}
+                      </em>
+                    )}
+                  </button>
+                )}
               </div>
 
               <div className="search-box">
@@ -830,6 +872,7 @@ export default function App() {
                     onHover={setActive}
                     onPaste={paste}
                     onPin={togglePin}
+                    onMenu={openMenu}
                   />
                 ))
               )}
@@ -838,6 +881,65 @@ export default function App() {
       </div>
 
       {toast && <div className="toast">{toast}</div>}
+
+      {menu && (
+        <>
+          <div
+            className="ctx-mask"
+            onMouseDown={() => setMenu(null)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setMenu(null);
+            }}
+          />
+          <div
+            className="ctx-menu"
+            style={{
+              // 贴着边缘右键时往回收，免得菜单被窗口裁掉
+              left: Math.min(menu.x, window.innerWidth - 172),
+              top: Math.min(menu.y, window.innerHeight - 190),
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button
+              onClick={() => {
+                void paste(menu.clip.id);
+                setMenu(null);
+              }}
+            >
+              复制
+            </button>
+            <button
+              onClick={() => {
+                void togglePin(menu.clip.id);
+                setMenu(null);
+              }}
+            >
+              {menu.clip.pinned ? "取消收藏" : "收藏"}
+            </button>
+            {menu.clip.kind === "image" && (
+              <button
+                onClick={() => {
+                  void revealFile(menu.clip.id);
+                  setMenu(null);
+                }}
+              >
+                在文件夹中显示
+              </button>
+            )}
+            <span className="ctx-sep" />
+            <button
+              className="danger"
+              onClick={() => {
+                void removeClip(menu.clip.id);
+                setMenu(null);
+              }}
+            >
+              删除
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -897,6 +999,7 @@ type ClipCardProps = {
   onHover: (index: number) => void;
   onPaste: (id: string) => void;
   onPin: (id: string) => void;
+  onMenu: (clip: ClipView, x: number, y: number) => void;
 };
 
 /**
@@ -915,6 +1018,7 @@ const ClipCard = memo(function ClipCard({
   onHover,
   onPaste,
   onPin,
+  onMenu,
 }: ClipCardProps) {
   const kind = detectKind(clip.kind, clip.preview);
   const meta = KIND_META[kind];
@@ -943,6 +1047,10 @@ const ClipCard = memo(function ClipCard({
       style={style}
       onMouseEnter={() => onHover(index)}
       onMouseDown={(e) => e.preventDefault()}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onMenu(clip, e.clientX, e.clientY);
+      }}
       onClick={() => void onPaste(clip.id)}
     >
       <div className="card-head">
