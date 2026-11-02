@@ -6,7 +6,7 @@
 
 - 需求规格：[docs/01-requirements.md](docs/01-requirements.md)
 - 技术栈：Tauri 2 + Rust 平台壳 + TypeScript/React 界面
-- 当前版本：0.8.1（本机闭环 + iCloud 同步 + 局域网直连 + 全宽卡片条 + 图片同步）
+- 当前版本：0.8.2（本机闭环 + iCloud 同步 + 局域网直连 + 全宽卡片条 + 图片同步）
 
 ## 现在能做什么
 
@@ -131,6 +131,37 @@ node scripts/build-all.mjs --mac --skip-build
 
 macOS 的 dmg 由 `scripts/make-dmg.sh` 用 `hdiutil` 直接造，不走 `tauri build --bundles dmg`——
 后者会调 AppleScript 驱动 Finder 摆窗口位置，在没有图形会话（CI / 无头）时报 `-10004` 并整体失败。
+
+### Windows 打包前置条件
+
+`npx tauri build` 只是外壳，真正干活的是 Rust 工具链。最常见的失败是
+`failed to run 'cargo metadata' ... program not found`——**cargo 不在 PATH 里**。
+
+在 PowerShell 里依次确认：
+
+```powershell
+rustc -V          # 报错说明还没装 Rust
+cargo -V          # 同上
+rustup show       # 看默认工具链是否为 x86_64-pc-windows-msvc
+where.exe cargo   # 看路径是不是 %USERPROFILE%\.cargo\bin\cargo.exe
+```
+
+需要准备三样东西：
+
+1. **Rust**：<https://rustup.rs> 下载 `rustup-init.exe`，安装时选 MSVC 工具链
+2. **MSVC 生成工具**：安装器会提示，或单独装 Visual Studio Build Tools 的「使用 C++ 的桌面开发」
+   （提供 `link.exe`，cargo 通过 vswhere 自动找，不必进 PATH）
+3. **PATH**：包含 `%USERPROFILE%\.cargo\bin`。装完 Rust 必须**重开终端**，
+   否则当前窗口看不到新路径
+
+临时救急（只对当前窗口生效）：
+
+```powershell
+$env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
+```
+
+`scripts/build-all.mjs` 会先探 PATH、再探默认安装位置，探到了会自动补进子进程环境并给出提示；
+两边都没有时直接打印上面的清单后退出，不会抛一堆 node 堆栈。
 
 ### 三平台 CI
 

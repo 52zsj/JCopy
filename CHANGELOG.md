@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.2
+
+修 Windows 本地打包：cargo 找不到时给可操作提示，并绕开 npx 的 .cmd 问题。
+
+### 修复
+
+- `npm run dist:win` 在 Windows 上会直接抛 node 堆栈：
+  `failed to run 'cargo metadata' ... program not found`。
+  现在 `build-all.mjs` 先探 PATH、再探 `%USERPROFILE%\.cargo\bin`，
+  找到就把该目录补进子进程 PATH（终端没重启也能跑），找不到则打印 checklist 后退出
+- 不再用 `npx tauri`。Windows 上 `npx` 是 `.cmd`，`execFile` 跑它容易踩坑；
+  改为直接用 `node node_modules/@tauri-apps/cli/tauri.js`，三平台一致
+- 统一 `run()` 的 Windows 分支走 shell 并做参数转义，`npm` / `bash` 调用不再依赖外部环境
+
+### 文档
+
+- README 增加「Windows 打包前置条件」：Rust、MSVC 生成工具、PATH 三件事，
+  以及 `rustc -V` / `cargo -V` / `rustup show` / `where.exe cargo` 四条验证命令
+
 ## 0.8.1
 
 工程化：三平台 CI、一键发版、本地打包命令。
