@@ -130,25 +130,39 @@ fn probe_dom(app: &tauri::AppHandle) {
         // 走 IPC 回传：eval 没有返回值，而读 window.url() 在 webview 尚未加载时
         // 会命中 wry 里的 unwrap(nil) 直接把主线程打崩。
         let script = r#"(() => {
+            const root = document.documentElement;
             const s = document.querySelector('.surface');
             const rail = document.querySelector('.rail');
             const cards = document.querySelectorAll('.card');
-            let out = 'NO_SURFACE';
+            const report = (info) => window.__TAURI_INTERNALS__.invoke('probe_report', { info });
+
+            let base = 'NO_SURFACE';
             if (s) {
                 const r = s.getBoundingClientRect();
-                const first = cards.length ? cards[0].getBoundingClientRect() : null;
-                const cs = cards.length ? getComputedStyle(cards[0]) : null;
-                const band = cards.length ? getComputedStyle(cards[0], '::before') : null;
-                out = Math.round(r.width) + 'x' + Math.round(r.height)
+                base = Math.round(r.width) + 'x' + Math.round(r.height)
                     + '-cards-' + cards.length
-                    + '-railKids-' + (rail ? rail.children.length : -1)
-                    + '-imgs-' + document.querySelectorAll('.card-media img').length
-                    + '-cardSize-' + (first ? Math.round(first.width) + 'x' + Math.round(first.height) : 'na')
-                    + ' | surface=' + getComputedStyle(s).backgroundColor
-                    + ' card=' + (cs ? cs.backgroundColor : 'na')
-                    + ' band=' + (band ? band.backgroundColor : 'na');
+                    + '-theme=' + root.dataset.theme
+                    + '-font=' + root.dataset.font
+                    + '-scrollLeft=' + (rail ? rail.scrollLeft : -1);
             }
-            window.__TAURI_INTERNALS__.invoke('probe_report', { info: out });
+
+            // 点齿轮打开设置弹窗：确认它是叠层，抽屉高度不被撑高
+            const gear = document.querySelector('.icon-btn');
+            if (!gear) {
+                report(base + ' | noGear');
+                return;
+            }
+            gear.click();
+            requestAnimationFrame(() => {
+                const modal = document.querySelector('.modal');
+                const size = modal
+                    ? Math.round(modal.getBoundingClientRect().width) + 'x' + Math.round(modal.getBoundingClientRect().height)
+                    : 'NONE';
+                const winH = s ? Math.round(s.getBoundingClientRect().height) : -1;
+                report(base + ' | modal=' + size + ' segs=' + document.querySelectorAll('.seg').length + ' winH=' + winH);
+                const done = document.querySelector('.modal .ghost');
+                if (done) done.click();
+            });
         })()"#;
         let _ = window.eval(script);
     });

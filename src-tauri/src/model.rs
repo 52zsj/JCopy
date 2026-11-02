@@ -105,6 +105,10 @@ pub struct Settings {
     pub sync_dir: Option<String>,
     /// 不记录复制内容的应用（bundle id / 进程名）
     pub blacklist: Vec<String>,
+    /// 外观主题：system / light / dark
+    pub theme: String,
+    /// 字号档位：small / medium / large
+    pub font_size: String,
 }
 
 impl Default for Settings {
@@ -120,6 +124,8 @@ impl Default for Settings {
             sync_key: None,
             sync_dir: None,
             blacklist: default_blacklist(),
+            theme: "system".into(),
+            font_size: "medium".into(),
         }
     }
 }

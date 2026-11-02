@@ -25,6 +25,10 @@ export type Settings = {
   syncKey: string | null;
   syncDir: string | null;
   blacklist: string[];
+  /** 外观主题：system / light / dark */
+  theme: string;
+  /** 字号档位：small / medium / large */
+  fontSize: string;
 };
 
 export type Bootstrap = {

@@ -65,6 +65,9 @@ export default function App() {
         setActive(0);
         setSettingsOpen(false);
         setToast(null);
+        // active 本来就是 0 时 scrollIntoView 不会触发，滚动条会停在上一次的位置
+        // （拉到最右后重开，卡片就全在屏幕外了），这里显式归零
+        if (railRef.current) railRef.current.scrollLeft = 0;
         void api.syncStatus().then(setSync).catch(() => {});
         requestAnimationFrame(() => inputRef.current?.focus());
       });
@@ -90,10 +93,23 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  // 剪贴板是扁条、设置页要更高，切换时让 Rust 侧重排窗口
+  // 主题与字号写到 <html> 上，CSS 只认 data-*；system 交给媒体查询，
+  // 这里监听系统主题变化实时跟随
   useEffect(() => {
-    void api.setPanelMode(settingsOpen ? "settings" : "clips");
-  }, [settingsOpen]);
+    const root = document.documentElement;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+
+    const apply = () => {
+      const theme = settings?.theme ?? "system";
+      const resolved = theme === "system" ? (media.matches ? "dark" : "light") : theme;
+      root.dataset.theme = resolved;
+      root.dataset.font = settings?.fontSize ?? "medium";
+    };
+
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, [settings?.theme, settings?.fontSize]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -310,7 +326,17 @@ export default function App() {
       <div className="surface">
         <div className="grabber" aria-hidden="true" />
 
-        {settingsOpen ? (
+        {settingsOpen && (
+          <div
+            className="modal-backdrop"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) {
+                setSettingsOpen(false);
+                requestAnimationFrame(() => inputRef.current?.focus());
+              }
+            }}
+          >
+          <div className="modal">
           <div className="settings">
             <div className="settings-head">
               <span>设置</span>
@@ -326,6 +352,38 @@ export default function App() {
             </div>
 
             <div className="settings-body">
+              <div className="row static">
+                <span>
+                  外观
+                  <em>主题切换即时生效，跟随系统会随深浅色自动变化</em>
+                </span>
+                <Seg
+                  value={settings?.theme ?? "system"}
+                  options={[
+                    { value: "system", label: "跟随系统" },
+                    { value: "light", label: "浅色" },
+                    { value: "dark", label: "深色" },
+                  ]}
+                  onChange={(v) => void patchSettings({ theme: v })}
+                />
+              </div>
+
+              <div className="row static">
+                <span>
+                  字号
+                  <em>卡片正文与元信息的显示大小</em>
+                </span>
+                <Seg
+                  value={settings?.fontSize ?? "medium"}
+                  options={[
+                    { value: "small", label: "小" },
+                    { value: "medium", label: "中" },
+                    { value: "large", label: "大" },
+                  ]}
+                  onChange={(v) => void patchSettings({ fontSize: v })}
+                />
+              </div>
+
               <label className="field">
                 <span className="field-label">设备名称</span>
                 <input
@@ -536,8 +594,10 @@ export default function App() {
               </button>
             </div>
           </div>
-        ) : (
-          <>
+          </div>
+          </div>
+        )}
+        <>
             <div className="top-bar">
               <div className="top-side">
                 <span className="brand">JCopy</span>
@@ -698,11 +758,35 @@ export default function App() {
                 })
               )}
             </div>
-          </>
-        )}
+        </>
       </div>
 
       {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+/** 分段选择器：设置里切主题 / 字号这种二选一到四选一的场景 */
+function Seg({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="seg" role="group">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          className={option.value === value ? "on" : ""}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
   );
 }

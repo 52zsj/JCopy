@@ -52,7 +52,7 @@ JCopy/
 
 ## 安装
 
-从 `release/0.6.3/` 取 dmg，拖进「应用程序」。
+从 `release/0.7.0/` 取 dmg，拖进「应用程序」。
 
 **首次打开会被 Gatekeeper 拦下** —— 当前包未做 Apple 开发者签名与公证：
 
