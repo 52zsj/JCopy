@@ -14,10 +14,29 @@ ARCH=$(uname -m)
 export PATH="$HOME/.cargo/bin:$PATH"
 
 echo "==> 构建 JCopy $VERSION ($ARCH)"
-npm run app:build -- --bundles app
+# 传 --skip-build 时复用已有的 .app；否则重新构建前端与 Rust
+if [ "${JCOPY_SKIP_BUILD:-0}" = "1" ]; then
+  echo "    (跳过构建，复用现有 .app)"
+else
+  npm run app:build -- --bundles app
+fi
 
 APP="src-tauri/target/release/bundle/macos/JCopy.app"
-[ -d "$APP" ] || { echo "找不到 $APP"; exit 1; }
+[ -d "$APP" ] || { echo "找不到 $APP（若用了 --skip-build，先完整构建一次）"; exit 1; }
+
+# 版本号写在三个地方（package.json / tauri.conf.json / Cargo.toml），漏改一个就会出现
+# "文件名叫 0.9.1、里面装的还是 0.9.0" 的情况。这里以 Info.plist 为准校验一次。
+APP_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
+  "$APP/Contents/Info.plist" 2>/dev/null || echo "")
+if [ -n "$APP_VERSION" ] && [ "$APP_VERSION" != "$VERSION" ]; then
+  # 变量必须用 ${} 包起来：紧跟中文全角逗号时，zsh 会把标点当作变量名的一部分
+  echo "✗ 版本不一致：文件名叫 ${VERSION}，但 Info.plist 里是 ${APP_VERSION}"
+  echo "  检查 src-tauri/tauri.conf.json 与 src-tauri/Cargo.toml 的 version 是否已同步"
+  exit 1
+fi
+
+# 清掉历史遗留的中间镜像（tauri 内置 dmg 打包器失败会留下 rw.*.dmg，30MB 起步）
+rm -f src-tauri/target/release/bundle/macos/rw.*.dmg 2>/dev/null || true
 
 OUT="release/$VERSION"
 mkdir -p "$OUT"

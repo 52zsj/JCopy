@@ -13,7 +13,7 @@
  *   官方不支持从 macOS 交叉打出三平台包。要一次拿全三平台，用 GitHub Actions（.github/workflows/release.yml）。
  */
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -103,8 +103,11 @@ const requested = has("--all")
   ? ["mac", "win", "linux"]
   : ["mac", "win", "linux"].filter((target) => has(`--${target}`));
 
-if (requested.length === 0) {
-  console.log("用法：node scripts/build-all.mjs --mac|--win|--linux|--all [--skip-build]");
+if (requested.length === 0 && !has("--clean")) {
+  console.log(
+    "用法：node scripts/build-all.mjs --mac|--win|--linux|--all [--skip-build]\n" +
+      "      node scripts/build-all.mjs --clean [--keep=2]   # 清理 release/ 里的历史版本",
+  );
   process.exit(1);
 }
 
@@ -140,16 +143,118 @@ function tauri(args) {
   run(process.execPath, [cli, ...args]);
 }
 
+/**
+ * 从构建目录里挑出**本次版本**的产物拷贝到 release/<版本>/。
+ *
+ * 必须按版本号过滤：Tauri 的 bundle 目录是累积的，装过 0.8.5 再打 0.9.1，
+ * `bundle/nsis/` 里会同时躺着 JCopy_0.8.5_x64-setup.exe 和 JCopy_0.9.1_x64-setup.exe。
+ * 以前这里是「匹配到就拷」，于是当前版本目录里混进了历史版本安装包
+ * ——包名不同、版本号也不同，看起来就像"一次打出好几个版本"。
+ */
 function collect(fromDir, pattern) {
   if (!existsSync(fromDir)) return [];
+  // 匹配 -0.9.1 或 _0.9.1，并且后面紧跟 . _ - 或结束，避免 0.9.1 命中 0.9.10
+  const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const versionTag = new RegExp(`(^|[-_])${escaped}([._-]|$)`);
+
   const copied = [];
+  const ignored = [];
   for (const name of readdirSync(fromDir)) {
     if (!pattern.test(name)) continue;
+    if (!versionTag.test(name)) {
+      ignored.push(name);
+      continue;
+    }
     const target = path.join(outDir, name);
     copyFileSync(path.join(fromDir, name), target);
     copied.push(target);
   }
+
+  if (ignored.length > 0) {
+    console.log(`  ! 跳过 ${ignored.length} 个其他版本的产物：${ignored.join("、")}`);
+  }
   return copied;
+}
+
+/** 打包前清掉该平台的旧产物，避免历史版本继续堆在 bundle 目录里 */
+function cleanBundle(...dirs) {
+  let removed = 0;
+  for (const dir of dirs) {
+    if (!existsSync(dir)) continue;
+    for (const name of readdirSync(dir)) {
+      // 只删文件形态的产物；JCopy.app 这类目录不能碰
+      if (!/\.(exe|deb|AppImage|dmg|rpm)$/i.test(name)) continue;
+      try {
+        rmSync(path.join(dir, name), { force: true });
+        removed += 1;
+      } catch {
+        // 被占用就先留着，采集时还有版本过滤兜底
+      }
+    }
+  }
+  if (removed > 0) console.log(`  · 已清掉构建目录里 ${removed} 个旧产物`);
+}
+
+/* ---------- release 目录清理 ---------- */
+
+const releaseRoot = path.join(root, "release");
+
+function dirSize(dir) {
+  let total = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    total += entry.isDirectory() ? dirSize(full) : statSync(full).size;
+  }
+  return total;
+}
+
+function versionDirs() {
+  if (!existsSync(releaseRoot)) return [];
+  return readdirSync(releaseRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((a, b) => {
+      const pa = a.split(".").map(Number);
+      const pb = b.split(".").map(Number);
+      for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+        const diff = (pb[i] ?? 0) - (pa[i] ?? 0);
+        if (diff !== 0) return diff;
+      }
+      return 0;
+    });
+}
+
+function summarizeRelease() {
+  const dirs = versionDirs();
+  if (dirs.length === 0) return;
+  const bytes = dirSize(releaseRoot);
+  const mb = (bytes / 1024 / 1024).toFixed(0);
+  console.log(`\nrelease/ 现存 ${dirs.length} 个版本、共 ${mb} MB（最新 ${dirs[0]}）`);
+  if (dirs.length > 3) {
+    console.log("  历史版本可用 `node scripts/build-all.mjs --clean` 清理（默认保留最近 2 个）");
+  }
+}
+
+// --clean：清历史版本，默认保留最近 2 个
+if (has("--clean")) {
+  const keepArg = argv.find((item) => item.startsWith("--keep="));
+  const keep = Math.max(0, Number(keepArg?.split("=")[1] ?? 2) || 0);
+  const dirs = versionDirs();
+  const drop = dirs.slice(keep);
+  if (drop.length === 0) {
+    console.log(`release/ 只有 ${dirs.length} 个版本，无需清理`);
+  } else {
+    let freed = 0;
+    for (const name of drop) {
+      const full = path.join(releaseRoot, name);
+      freed += dirSize(full);
+      rmSync(full, { recursive: true, force: true });
+      console.log(`  删除 release/${name}`);
+    }
+    console.log(`✓ 清理 ${drop.length} 个历史版本，释放 ${(freed / 1024 / 1024).toFixed(0)} MB`);
+    console.log(`  保留：${dirs.slice(0, keep).join("、") || "无"}`);
+  }
+  if (requested.length === 0) process.exit(0);
 }
 
 /* ---------- 逐目标构建 ---------- */
@@ -169,7 +274,9 @@ for (const target of requested) {
 
   if (target === "mac") {
     // 交给 package.sh：内置 dmg 打包器会调 AppleScript 摆窗口，无图形会话时直接失败，
-    // 所以那边用 hdiutil 自己造盘
+    // 所以那边用 hdiutil 自己造盘。
+    // 先清掉 bundle/macos 里历史遗留的 rw.*.dmg（tauri 内置 dmg 打包器失败时的中间镜像）
+    cleanBundle(path.join(root, "src-tauri/target/release/bundle/macos"));
     run("bash", ["scripts/package.sh"], {
       env: skipBuild ? { JCOPY_SKIP_BUILD: "1" } : {},
     });
@@ -181,6 +288,7 @@ for (const target of requested) {
   if (!skipBuild) run("npm", ["run", "build"]);
 
   if (target === "win") {
+    cleanBundle(path.join(root, "src-tauri/target/release/bundle/nsis"));
     tauri(["build", "--bundles", "nsis"]);
     const files = collect(path.join(root, "src-tauri/target/release/bundle/nsis"), /-setup\.exe$/i);
     if (files.length === 0) {
@@ -191,6 +299,10 @@ for (const target of requested) {
   }
 
   if (target === "linux") {
+    cleanBundle(
+      path.join(root, "src-tauri/target/release/bundle/deb"),
+      path.join(root, "src-tauri/target/release/bundle/appimage"),
+    );
     tauri(["build", "--bundles", "deb,appimage"]);
     const files = [
       ...collect(path.join(root, "src-tauri/target/release/bundle/deb"), /\.deb$/),
@@ -211,3 +323,4 @@ if (skipped.length > 0) {
   console.log("\n跳过：");
   for (const item of skipped) console.log(`  - ${item}`);
 }
+summarizeRelease();

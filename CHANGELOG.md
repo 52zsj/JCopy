@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.9.2
+
+修「打包时出现多个版本」。
+
+### 根因
+
+三个独立来源，前两个是真 bug：
+
+1. **采集时不按版本过滤**（Windows / Linux 尤其明显）
+   `build-all.mjs` 的 `collect()` 会把 `bundle/nsis` 里**所有** `*-setup.exe` 拷进 `release/<当前版本>/`。
+   Tauri 的 bundle 目录是累积的：装过 0.8.5 再打 0.9.1，目录里躺着两个版本的安装包，
+   于是一次打包的产物目录里出现多个版本号的文件。
+2. **构建目录残留**：`bundle/macos/` 里有 `rw.25286.JCopy_0.2.0_aarch64.dmg`
+   —— 早期 `tauri build --bundles dmg` 失败留下的读写中间镜像，30 MB，一直没被清理过。
+3. **`release/` 目录累积**（设计如此，但没有任何提示）：18 个历史版本共 120 MB。
+
+### 改动
+
+- `collect()` 按当前版本号过滤文件名（`0.9.1` 不会误匹配 `0.9.10`），
+  跳过的旧文件会打印出来
+- 构建前清理该平台 bundle 目录里的旧产物（`nsis/*.exe`、`*.deb`、`*.AppImage`、`rw.*.dmg`）
+- 新增 `--clean [--keep=N]`：清理 `release/` 历史版本，默认保留最近 2 个
+- 打包结束打印 `release/` 的版本数与占用，超过 3 个时提示可清理
+- `--skip-build` 之前传给 `package.sh` 却没被读取（等于无效），现在真的跳过构建
+- `package.sh` 增加版本一致性校验：`package.json` 与 `Info.plist` 不一致时直接报错，
+  避免"包名是新版本、内容是旧版本"
+- 修 `package.sh` 里 `$VERSION，` 被 zsh 当成变量名导致提示文字乱码的问题（改用 `${VERSION}`）
+
 ## 0.9.1
 
 把「图片为什么没同步过来」变成看得见的信息。

@@ -6,7 +6,7 @@
 
 - 需求规格：[docs/01-requirements.md](docs/01-requirements.md)
 - 技术栈：Tauri 2 + Rust 平台壳 + TypeScript/React 界面
-- 当前版本：0.9.1（本机闭环 + iCloud 同步 + 局域网直连 + 全宽卡片条 + 图片同步）
+- 当前版本：0.9.2（本机闭环 + iCloud 同步 + 局域网直连 + 全宽卡片条 + 图片同步）
 
 ## 现在能做什么
 
@@ -152,11 +152,22 @@ npm run dist:linux    # Linux：deb + AppImage（在 Linux 上跑）
 npm run dist:all      # 当前系统支持的全部
 ```
 
-底层是 `node scripts/build-all.mjs`，参数同上，另有 `--skip-build` 复用已构建的前端产物：
+底层是 `node scripts/build-all.mjs`，参数同上，另有 `--skip-build` 复用已构建的前端产物，
+以及 `--clean` 清理历史版本：
 
 ```bash
 node scripts/build-all.mjs --mac --skip-build
+node scripts/build-all.mjs --clean              # 清理 release/ 历史版本，保留最近 2 个
+node scripts/build-all.mjs --clean --keep=3     # 保留最近 3 个
 ```
+
+**每次打包只产出当前版本**：`release/<版本>/` 里只会出现本次版本的文件。
+Tauri 的 `bundle/nsis`、`bundle/deb` 这些目录是累积的，装过旧版本会有多个安装包躺在里面，
+所以脚本在构建前会清掉旧产物、采集时再按版本号过滤一次，避免历史版本混进来。
+
+另外 `package.sh` 会比对 `Info.plist` 里的版本与 `package.json` 是否一致——
+版本号写在三处（`package.json`、`tauri.conf.json`、`Cargo.toml`），漏改一个就会出现
+"文件名叫 0.9.2、里面装的还是 0.9.1"，这里直接报错拦下。
 
 **Tauri 不支持跨系统打包**：Windows 要 NSIS/WiX，Linux 要 webkit2gtk 与 dpkg，都无法从 macOS 交叉出包。
 所以在 Mac 上跑 `--win` / `--linux` 会明确提示跳过，而不是打出坏包。要一次拿全三平台，用下面的 CI。
