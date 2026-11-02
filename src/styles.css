@@ -1424,3 +1424,18 @@ mark {
   margin-top: 8px;
   width: 100%;
 }
+
+/* 配对串：等宽显示，方便核对首尾 */
+.invite-token-text {
+  margin: 6px 0 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--item-hover);
+  border: 1px solid var(--chip-border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: calc(11px * var(--fs));
+  color: var(--text);
+  word-break: break-all;
+  line-height: 1.45;
+  user-select: all;
+}

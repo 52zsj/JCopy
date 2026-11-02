@@ -52,7 +52,13 @@ pub fn spawn(app: AppHandle, state: Arc<AppState>) {
             let image = clipboard
                 .get_image()
                 .ok()
-                .filter(|img| !img.bytes.is_empty());
+                .filter(|img| !img.bytes.is_empty())
+                .or_else(|| {
+                    // 在 Finder 里 ⌘C 一个图片文件时，剪贴板既没有位图也没有文本，
+                    // 只有一个 file-url。以前这种情况直接被丢掉，图片永远进不了历史。
+                    platform::clipboard_image_file()
+                        .and_then(|path| image_from_file(std::path::Path::new(&path)))
+                });
             let text = if image.is_some() {
                 None
             } else {
@@ -151,6 +157,22 @@ pub fn spawn(app: AppHandle, state: Arc<AppState>) {
             }
         }
     });
+}
+
+/// 把磁盘上的图片文件解码成剪贴板同款的 RGBA，好复用 save_image 那条路。
+/// 解码不了的格式（HEIC/AVIF 等）返回 None，由上层跳过。
+fn image_from_file(path: &Path) -> Option<arboard::ImageData<'static>> {
+    let meta = std::fs::metadata(path).ok()?;
+    if meta.len() > MAX_IMAGE_BYTES as u64 {
+        return None;
+    }
+    let rgba = image::open(path).ok()?.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    Some(arboard::ImageData {
+        width: width as usize,
+        height: height as usize,
+        bytes: std::borrow::Cow::Owned(rgba.into_raw()),
+    })
 }
 
 /// 原图存 `<id>.png`，缩略图存 `<id>.t.png`（同目录，前端按路径后缀推出来）。

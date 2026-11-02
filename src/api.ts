@@ -91,17 +91,13 @@ export type SyncStatus = {
   pendingImages: number;
   /** 共享目录里有几台设备的发件箱本机解不开（密钥不一致） */
   mismatchedPeers: number;
+  /** 对端有图、原图还没传过来，本机也还没有 → 正在等云盘 */
+  waitingImages: number;
+  /** 本机超过体积上限被跳过的条数 */
+  skippedOversize: number;
   /** 同步目录所在卷剩余空间（MB），u64::MAX 表示拿不到 */
   dirFreeMb: number;
   peerFiles: PeerFile[];
-};
-
-export type InviteInfo = {
-  code: string;
-  /** 可直接粘贴到另一台的配对串（JCP1.xxx），不依赖云盘传文件 */
-  token: string;
-  expiresAt: number;
-  path: string;
 };
 
 export const api = {
@@ -121,8 +117,7 @@ export const api = {
   syncStatus: (deep = false) => invoke<SyncStatus>("sync_status", { deep }),
   syncSetDir: (path: string) => invoke<void>("sync_set_dir", { path }),
   syncSetEnabled: (enabled: boolean) => invoke<void>("sync_set_enabled", { enabled }),
-  syncCreateInvite: () => invoke<InviteInfo>("sync_create_invite"),
-  syncJoin: (code: string) => invoke<string>("sync_join", { code }),
+  syncPairString: () => invoke<string>("sync_pair_string"),
   syncJoinToken: (token: string) => invoke<string>("sync_join_token", { token }),
   copyIgnored: (text: string) => invoke<void>("copy_ignored", { text }),
   syncNow: () => invoke<void>("sync_now"),

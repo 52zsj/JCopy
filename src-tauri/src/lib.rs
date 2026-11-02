@@ -79,8 +79,7 @@ pub fn run() {
             commands::sync_status,
             commands::sync_set_dir,
             commands::sync_set_enabled,
-            commands::sync_create_invite,
-            commands::sync_join,
+            commands::sync_pair_string,
             commands::sync_join_token,
             commands::copy_ignored,
             commands::sync_now,
@@ -206,11 +205,11 @@ fn probe_dom(app: &tauri::AppHandle) {
             // 配对串：生成 → 直接用它配对，验证"不依赖云盘"这条路真的通
             setTimeout(() => {
                 const inv = window.__TAURI_INTERNALS__.invoke;
-                inv('sync_create_invite')
-                    .then((info) => inv('sync_status', { deep: false })
-                        .then((before) => inv('sync_join_token', { token: info.token })
+                inv('sync_pair_string')
+                    .then((token) => inv('sync_status', { deep: false })
+                        .then((before) => inv('sync_join_token', { token })
                             .then((msg) => inv('sync_status', { deep: false })
-                                .then((after) => report('配对串 ' + info.token.slice(0, 10) + '… fp '
+                                .then((after) => report('配对串 ' + token.slice(0, 10) + '… fp '
                                     + (before.keyFingerprint || '-') + '→' + (after.keyFingerprint || '-')
                                     + ' msg=' + msg)))))
                     .catch((e) => report('配对串测试失败: ' + e));

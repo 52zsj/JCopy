@@ -11,7 +11,7 @@ import {
 } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { api, type ClipView, type InviteInfo, type Settings, type SyncStatus } from "./api";
+import { api, type ClipView, type Settings, type SyncStatus } from "./api";
 import {
   appLabel,
   detectKind,
@@ -36,9 +36,9 @@ export default function App() {
   // 卡片的右键菜单：位置 + 作用对象
   const [menu, setMenu] = useState<{ x: number; y: number; clip: ClipView } | null>(null);
   const [sync, setSync] = useState<SyncStatus | null>(null);
-  const [invite, setInvite] = useState<InviteInfo | null>(null);
+  // 配对串：把主密钥编码成文本，复制到另一台粘贴即可，不经过云盘
+  const [pairToken, setPairToken] = useState<string | null>(null);
   const [joinOpen, setJoinOpen] = useState(false);
-  const [joinCode, setJoinCode] = useState("");
   const [joinToken, setJoinToken] = useState("");
   const [dirOpen, setDirOpen] = useState(false);
   const [dirPath, setDirPath] = useState("");
@@ -322,14 +322,14 @@ export default function App() {
   }, [settingsOpen]);
 
   const copyToken = useCallback(async () => {
-    if (!invite) return;
+    if (!pairToken) return;
     try {
-      await api.copyIgnored(invite.token);
+      await api.copyIgnored(pairToken);
       setToast("配对串已复制，到另一台粘贴即可");
     } catch (error) {
       setToast(typeof error === "string" ? error : "复制失败");
     }
-  }, [invite]);
+  }, [pairToken]);
 
   const joinWithToken = useCallback(async () => {
     try {
@@ -343,26 +343,15 @@ export default function App() {
     }
   }, [joinToken]);
 
-  const createInvite = useCallback(async () => {
+  const createPairToken = useCallback(async () => {
     try {
-      setInvite(await api.syncCreateInvite());
+      const token = await api.syncPairString();
+      setPairToken(token);
+      setSync(await api.syncStatus(false));
     } catch (error) {
-      setToast(typeof error === "string" ? error : "生成配对码失败");
+      setToast(typeof error === "string" ? error : "生成配对串失败");
     }
   }, []);
-
-  const joinWithCode = useCallback(async () => {
-    try {
-      const name = await api.syncJoin(joinCode);
-      setJoinOpen(false);
-      setJoinCode("");
-      setInvite(null);
-      setToast(`已连接到 ${name}`);
-      setSync(await api.syncStatus());
-    } catch (error) {
-      setToast(typeof error === "string" ? error : "配对失败");
-    }
-  }, [joinCode]);
 
   const runSyncNow = useCallback(async () => {
     try {
@@ -566,12 +555,12 @@ export default function App() {
 
               <div className="group-title">跨设备同步</div>
 
-              {invite && (
+              {pairToken && (
                 <div className="invite-card">
-                  <div className="invite-code">{invite.code}</div>
+                  <div className="invite-token-text">{pairToken}</div>
                   <div className="invite-hint">
-                    在另一台设备输入这 6 位数字。若那边一直提示失效，
-                    说明云盘没把邀请文件传过去——改用下面的配对串。
+                    复制后到另一台设备的「输入配对码」里粘贴，点配对即可。
+                    这串是主密钥本身，别贴到公开地方；要作废就在任一台重新生成。
                   </div>
                   <button className="ghost invite-token" onClick={() => void copyToken()}>
                     复制配对串
@@ -583,27 +572,12 @@ export default function App() {
                 <>
                   <div className="join-row">
                     <input
-                      value={joinCode}
-                      onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      placeholder="输入 6 位配对码"
-                      inputMode="numeric"
-                      autoFocus
-                    />
-                    <button
-                      className="ghost"
-                      onClick={() => void joinWithCode()}
-                      disabled={joinCode.length !== 6}
-                    >
-                      连接
-                    </button>
-                  </div>
-                  <div className="join-row">
-                    <input
                       value={joinToken}
                       onChange={(e) => setJoinToken(e.target.value.trim())}
-                      placeholder="或粘贴配对串 JCP1.…（不依赖云盘）"
+                      placeholder="粘贴配对串 JCP1.…"
                       spellCheck={false}
                       autoComplete="off"
+                      autoFocus
                     />
                     <button
                       className="ghost"
@@ -631,7 +605,7 @@ export default function App() {
 
               {!sync?.paired ? (
                 <>
-                  <button className="row" onClick={() => void createInvite()}>
+                  <button className="row" onClick={() => void createPairToken()}>
                     <span>
                       生成配对码
                       <em>让另一台设备输入这个码</em>
@@ -642,12 +616,12 @@ export default function App() {
                     className="row"
                     onClick={() => {
                       setJoinOpen((v) => !v);
-                      setInvite(null);
+                      setPairToken(null);
                     }}
                   >
                     <span>
-                      输入配对码
-                      <em>已有设备生成了码？在这里输入</em>
+                      粘贴配对串
+                      <em>在另一台点「生成配对串」，复制过来粘贴</em>
                     </span>
                     <span className="chev">→</span>
                   </button>
@@ -766,6 +740,13 @@ export default function App() {
                       : " · 本机写入后由 iCloud 负责上传，通常 5–60 秒到达另一台"}
                   </div>
 
+                  {sync.skippedOversize > 0 && (
+                    <div className="diag-note">
+                      有 {sync.skippedOversize} 条超过同步体积上限被跳过（图片 12MB / 文本 256KB）。
+                      它们只在本机，不会同步到其他设备。
+                    </div>
+                  )}
+
                   {(sync.peerFiles ?? []).some((f) => f.missingImages > 0) && (
                     <div className="diag-note">
                       发件箱里已经有图片条目，但原图还在云盘上传/下载中。
@@ -803,10 +784,10 @@ export default function App() {
                           ? "bad"
                           : sync.mismatchedPeers > 0
                             ? "pending"
-                            : sync.dirFreeMb < 200
-                              ? "bad"
-                              : sync.pendingImages > 0
-                                ? "pending"
+                            : sync.waitingImages > 0 || sync.pendingImages > 0
+                              ? "pending"
+                              : sync.dirFreeMb < 200
+                                ? "bad"
                                 : "ok"
                     }`}
                     title={
@@ -837,9 +818,11 @@ export default function App() {
                             ? "同步异常"
                             : sync.mismatchedPeers > 0
                               ? `${sync.mismatchedPeers} 台密钥不匹配`
-                              : sync.dirFreeMb < 200
-                                ? "磁盘将满"
-                                : `↑${sync.pushedClips} ↓${sync.pulledClips}`}
+                              : sync.waitingImages > 0
+                                ? `${sync.waitingImages} 张图待传`
+                                : sync.dirFreeMb < 200
+                                  ? "磁盘将满"
+                                  : `↑${sync.pushedClips} ↓${sync.pulledClips}`}
                     </span>
                     {sync.enabled && sync.paired && !sync.lastError && (
                       <em>

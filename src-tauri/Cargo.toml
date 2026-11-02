@@ -1,6 +1,6 @@
 [package]
 name = "jcopy"
-version = "0.9.5"
+version = "0.9.6"
 description = "跨平台轻量剪贴板共享工具"
 authors = ["jay"]
 edition = "2021"

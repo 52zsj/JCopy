@@ -95,17 +95,32 @@ fn push(
     // 只发本机产生的条目：从对端同步来的内容不再回传，天然切断回环。
     // 用 c.local 判断而不是比对设备名——改过设备名之后，历史条目的 device 还是旧名字，
     // 按名字比会把整段历史漏发（这正是"B 机器一直收不到东西"的一个原因）。
+    // 被过滤掉的东西必须计数：以前超体积、原图丢失都是静默跳过，
+    // 用户只看到"另一台没收到"，无从判断是没发还是发不出去
+    let mut skipped_oversize = 0usize;
+    let mut missing_image_file = 0usize;
+
     let items: Vec<SyncClip> = clips
         .into_iter()
         .filter(|c| c.local)
-        // 图片按策略过滤——默认只有收藏过的才出去，避免把 iCloud 塞满
-        .filter(|c| match c.kind.as_str() {
-            "image" => match image_mode {
-                "off" => false,
-                "all" => c.bytes <= MAX_IMAGE_SYNC_BYTES,
-                _ => c.pinned && c.bytes <= MAX_IMAGE_SYNC_BYTES,
-            },
-            _ => c.bytes <= MAX_SYNC_BYTES,
+        .filter(|c| {
+            let too_big = match c.kind.as_str() {
+                "image" => c.bytes > MAX_IMAGE_SYNC_BYTES,
+                _ => c.bytes > MAX_SYNC_BYTES,
+            };
+            if too_big {
+                skipped_oversize += 1;
+                return false;
+            }
+            // 图片按策略过滤：off 不发，pinned 只发收藏过的
+            match c.kind.as_str() {
+                "image" => match image_mode {
+                    "off" => false,
+                    "all" => true,
+                    _ => c.pinned,
+                },
+                _ => true,
+            }
         })
         .take(OUTBOX_LIMIT)
         .filter_map(|c| {
@@ -116,6 +131,7 @@ fn push(
                 let target = images_dir.join(&name);
                 if !target.exists() && fs::copy(&c.content, &target).is_err() {
                     // 本地原图已被清理，这一条就不发了
+                    missing_image_file += 1;
                     return None;
                 }
                 Some(SyncClip {
@@ -191,7 +207,8 @@ fn push(
     rt.last_push_at = protocol::db_now_ms();
     rt.last_push_clips = clip_count;
     rt.last_push_images = image_count;
-    rt.pending_images = 0;
+    rt.pending_images = missing_image_file;
+    rt.skipped_oversize = skipped_oversize;
     Ok(())
 }
 
@@ -213,6 +230,7 @@ fn pull(
     let mut total_received = 0usize;
     let mut total_images = 0usize;
     let mut mismatched = 0usize;
+    let mut waiting_images = 0usize;
 
     for entry in entries.flatten().take(MAX_PEER_FILES) {
         let path = entry.path();
@@ -242,6 +260,11 @@ fn pull(
         let mut received = 0usize;
         let mut received_images = 0usize;
         for clip in &outbox.clips {
+            // 对端说有这张图，但原图还没传过来（而本机也没有）→ 计入"正在等待"
+            if clip.is_image() && !image_ready(state, root, clip) {
+                waiting_images += 1;
+                continue;
+            }
             let added = if clip.is_image() {
                 pull_image(state, root, clip, &outbox.device.name)?
             } else if clip.text.trim().is_empty() {
@@ -287,6 +310,7 @@ fn pull(
     rt.pulled_clips += total_received;
     rt.pulled_images += total_images;
     rt.mismatched_peers = mismatched;
+    rt.waiting_images = waiting_images;
     rt.last_error = if undecryptable.is_empty() {
         None
     } else {
@@ -393,6 +417,24 @@ fn prune_shared_images(dir: &Path, own_id: &str) {
             let _ = fs::remove_file(entry.path());
         }
     }
+}
+
+/// 这张图的原图是否已经在共享目录里（或者本机早就有了，不需要再等）
+fn image_ready(state: &Arc<AppState>, root: &Path, clip: &protocol::SyncClip) -> bool {
+    if let Some(name) = clip.image_ref.as_deref() {
+        let file = Path::new(name)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        if !file.is_empty() && root.join("images").join(file).is_file() {
+            return true;
+        }
+    }
+    state
+        .db
+        .lock()
+        .map(|conn| db::has_hash(&conn, &clip.hash))
+        .unwrap_or(false)
 }
 
 /// 文件超过十分钟没更新：多半是上一次配对的残留，不再当作"当前配对失败"

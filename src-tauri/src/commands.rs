@@ -7,7 +7,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::model::{ClipView, Settings};
 use crate::state::{save_settings, AppState, PeerStatus};
-use crate::sync::{crypto, engine, protocol, protocol::InvitePayload};
+use crate::sync::{crypto, engine, protocol};
 use crate::{db, platform};
 
 #[derive(serde::Serialize)]
@@ -288,22 +288,15 @@ pub struct SyncStatus {
     pub pending_images: usize,
     /// 共享目录里有几台设备的发件箱本机解不开
     pub mismatched_peers: usize,
+    /// 对端有图、原图还没传过来（本机也还没有）→ 正在等云盘
+    pub waiting_images: usize,
+    /// 本机有内容超过体积上限被跳过（图片 12MB / 文本 256KB）
+    pub skipped_oversize: usize,
     /// 同步目录所在卷的剩余空间（MB）。iCloud 目录写满时文件写不进去，
     /// 但本地磁盘错误平时看不见，所以直接摆到界面上
     pub dir_free_mb: u64,
     /// 共享目录下的全部发件箱文件（含自己那份）；只有 deep 模式才扫描
     pub peer_files: Vec<PeerFile>,
-}
-
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InviteInfo {
-    pub code: String,
-    /// 可直接复制到另一台的配对串（JCP1.xxx）。不依赖云盘传文件，
-    /// 云盘同步卡住时也能完成配对
-    pub token: String,
-    pub expires_at: i64,
-    pub path: String,
 }
 
 fn current_sync_dir(state: &AppState) -> PathBuf {
@@ -353,6 +346,8 @@ pub fn sync_status(
         pulled_images,
         pending_images,
         mismatched_peers,
+        waiting_images,
+        skipped_oversize,
     ) = {
         let rt = state.sync.lock().map_err(|e| e.to_string())?;
         let mut peers: Vec<PeerStatus> = rt.peers.values().cloned().collect();
@@ -370,6 +365,8 @@ pub fn sync_status(
             rt.pulled_images,
             rt.pending_images,
             rt.mismatched_peers,
+            rt.waiting_images,
+            rt.skipped_oversize,
         )
     };
 
@@ -490,6 +487,8 @@ pub fn sync_status(
         pulled_images,
         pending_images,
         mismatched_peers,
+        waiting_images,
+        skipped_oversize,
         dir_free_mb: free_mb(&dir),
     })
 }
@@ -564,122 +563,38 @@ pub fn sync_set_enabled(state: State<'_, Arc<AppState>>, enabled: bool) -> Resul
     Ok(())
 }
 
-/// 生成一次性配对邀请：写进共享目录，用 6 位配对码加密主密钥。
-/// 不依赖局域网，两台设备不在同一网络也能配对。
+/// 生成配对串：把主密钥编码成一串可复制文本，直接粘贴到另一台即可。
+///
+/// 不再生成 6 位码 + 邀请文件——那套要求邀请文件先通过云盘传到另一台，
+/// 云盘一卡就表现为"码是新的，对面却提示已失效"。
 #[tauri::command]
-pub fn sync_create_invite(state: State<'_, Arc<AppState>>) -> Result<InviteInfo, String> {
+pub fn sync_pair_string(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     use base64::engine::general_purpose::STANDARD as B64;
     use base64::Engine;
 
-    let key = {
-        let mut s = state.settings.lock().map_err(|e| e.to_string())?;
-        match s.sync_key.as_deref().and_then(decode_b64_key) {
-            Some(k) => k,
-            None => {
-                let k = crypto::random_key();
-                s.sync_key = Some(B64.encode(k));
-                save_settings(&state.config_dir, &s);
-                k
+    let existing = {
+        let rt = state.sync.lock().map_err(|e| e.to_string())?;
+        rt.key
+    };
+    let key = match existing {
+        Some(k) => k,
+        None => {
+            let k = crypto::random_key();
+            {
+                let mut rt = state.sync.lock().map_err(|e| e.to_string())?;
+                rt.key = Some(k);
+                rt.enabled = true;
             }
+            {
+                let mut cfg = state.settings.lock().map_err(|e| e.to_string())?;
+                cfg.sync_key = Some(B64.encode(k));
+                cfg.sync_enabled = true;
+                save_settings(&state.config_dir, &cfg);
+            }
+            k
         }
     };
-    {
-        let mut rt = state.sync.lock().map_err(|e| e.to_string())?;
-        rt.key = Some(key);
-    }
-
-    let settings = state.settings.lock().map_err(|e| e.to_string())?.clone();
-    let dir = current_sync_dir(&state);
-    if !dir.is_dir() {
-        return Err(format!("同步目录不可用：{}", dir.display()));
-    }
-
-    let code = crypto::random_pair_code();
-    let payload = InvitePayload {
-        key: B64.encode(key),
-        device_id: settings.device_id.clone(),
-        device_name: settings.device_name.clone(),
-    };
-
-    let mut invite = protocol::seal_invite(&code, &payload).ok_or("生成配对邀请失败")?;
-    invite.expires_at = protocol::db_now_ms() + 10 * 60 * 1000;
-
-    let pair_dir = dir.join("JCopy").join("pair");
-    fs::create_dir_all(&pair_dir).map_err(|e| e.to_string())?;
-    let file = pair_dir.join(format!("{}.invite", invite.invite_id));
-    let raw = serde_json::to_vec_pretty(&invite).map_err(|e| e.to_string())?;
-    fs::write(&file, raw).map_err(|e| e.to_string())?;
-
-    Ok(InviteInfo {
-        code,
-        token: format!("JCP1.{}", B64.encode(key)),
-        expires_at: invite.expires_at,
-        path: file.display().to_string(),
-    })
-}
-
-/// 用配对码加入：扫描共享目录里的邀请文件并逐个试解。
-#[tauri::command]
-pub fn sync_join(state: State<'_, Arc<AppState>>, code: String) -> Result<String, String> {
-    let code = code.trim().to_string();
-    if code.len() != 6 || !code.chars().all(|c| c.is_ascii_digit()) {
-        return Err("配对码是 6 位数字".into());
-    }
-
-    let dir = current_sync_dir(&state);
-    let pair_dir = dir.join("JCopy").join("pair");
-    let entries = fs::read_dir(&pair_dir).map_err(|_| {
-        "云盘里还没有 JCopy/pair 目录：邀请文件在另一台生成后，要先通过云盘同步过来。\
-         如果一直等不到，改用「配对串」——复制一串文本到这台粘贴即可，不依赖云盘"
-            .to_string()
-    })?;
-
-    let mut found: Option<(PathBuf, InvitePayload)> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("invite") {
-            continue;
-        }
-        let Ok(raw) = fs::read(&path) else { continue };
-        let Ok(invite) = serde_json::from_slice::<protocol::Invite>(&raw) else {
-            continue;
-        };
-        if let Some(payload) = protocol::open_invite(&code, &invite) {
-            found = Some((path, payload));
-            break;
-        }
-    }
-
-    let Some((path, payload)) = found else {
-        let count = fs::read_dir(&pair_dir)
-            .map(|it| it.flatten().count())
-            .unwrap_or(0);
-        return Err(if count == 0 {
-            "云盘里还没有邀请文件（多半是云盘没同步过来或空间不足）。\
-             可以改用「配对串」配对，不依赖云盘"
-                .to_string()
-        } else {
-            format!("配对码不正确，或邀请已过期（10 分钟）。云盘里有 {count} 个邀请文件，都不是这个码")
-        });
-    };
-
-    let key = decode_b64_key(&payload.key).ok_or("邀请内容损坏")?;
-    {
-        let mut rt = state.sync.lock().map_err(|e| e.to_string())?;
-        rt.key = Some(key);
-        rt.enabled = true;
-        rt.last_push_hash.clear();
-    }
-    {
-        let mut s = state.settings.lock().map_err(|e| e.to_string())?;
-        s.sync_key = Some(payload.key.clone());
-        s.sync_enabled = true;
-        save_settings(&state.config_dir, &s);
-    }
-
-    // 邀请是一次性的
-    let _ = fs::remove_file(path);
-    Ok(payload.device_name)
+    Ok(format!("JCP1.{}", B64.encode(key)))
 }
 
 /// 用「配对串」直接配对：不走云盘、不读文件，复制粘贴即可。

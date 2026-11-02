@@ -209,3 +209,71 @@ pub fn clipboard_seq() -> Option<i64> {
         None
     }
 }
+
+/// 剪贴板里如果是「文件」（在 Finder / 资源管理器里 ⌘C 一个图片文件），
+/// 位图和文本都读不到——只有 `furl`。这条路径返回文件路径，
+/// 让上层能把图片文件当图片采集，而不是直接丢掉。
+pub fn clipboard_image_file() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        use cocoa::base::{id, nil};
+        use cocoa::foundation::NSString;
+        use objc::{class, msg_send, sel, sel_impl};
+        unsafe {
+            let pasteboard: id = msg_send![class!(NSPasteboard), generalPasteboard];
+            if pasteboard == nil {
+                return None;
+            }
+            let kind = NSString::alloc(nil).init_str("public.file-url");
+            let value: id = msg_send![pasteboard, stringForType: kind];
+            if value == nil {
+                return None;
+            }
+            let raw: *const std::os::raw::c_char = msg_send![value, UTF8String];
+            if raw.is_null() {
+                return None;
+            }
+            let url = std::ffi::CStr::from_ptr(raw).to_string_lossy().into_owned();
+            let path = url.strip_prefix("file://")?;
+            let decoded = percent_decode(path);
+            let p = std::path::Path::new(&decoded);
+            let ext = p
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_ascii_lowercase())?;
+            // 只认常见位图；HEIC 之类的解码不了，交给上层跳过
+            const OK: [&str; 6] = ["png", "jpg", "jpeg", "gif", "bmp", "webp"];
+            if OK.contains(&ext.as_str()) && p.is_file() {
+                Some(decoded)
+            } else {
+                None
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+/// 路径里的 %E4%B8%AD 这类转义（中文文件名很常见）
+#[cfg(target_os = "macos")]
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hex = &input[i + 1..i + 3];
+            if let Ok(value) = u8::from_str_radix(hex, 16) {
+                out.push(value);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
