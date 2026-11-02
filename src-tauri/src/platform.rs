@@ -173,3 +173,39 @@ mod linux_paste {
         Err("当前平台暂不支持自动粘贴，请手动粘贴".into())
     }
 }
+
+/// 剪贴板变更计数：只要这个数没变，就说明剪贴板没被改过，完全不必读取内容。
+/// 监听线程每 350ms 轮询一次，如果每次都去 `get_image()`，一张截图会被反复
+/// 拷进内存再算 SHA-256——那是白烧 CPU 和电。
+pub fn clipboard_seq() -> Option<i64> {
+    #[cfg(target_os = "macos")]
+    {
+        use cocoa::base::id;
+        use objc::{class, msg_send, sel, sel_impl};
+        unsafe {
+            let pasteboard: id = msg_send![class!(NSPasteboard), generalPasteboard];
+            if pasteboard.is_null() {
+                return None;
+            }
+            let count: i64 = msg_send![pasteboard, changeCount];
+            Some(count)
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::System::DataExchange::GetClipboardSequenceNumber;
+        let seq = unsafe { GetClipboardSequenceNumber() };
+        // 0 表示拿不到（例如没有剪贴板访问权限），交给上层退回内容比对
+        if seq == 0 {
+            None
+        } else {
+            Some(seq as i64)
+        }
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        None
+    }
+}

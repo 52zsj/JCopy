@@ -179,6 +179,24 @@ fn probe_dom(app: &tauri::AppHandle) {
                         + ' files=[' + files + '] err=' + (st.lastError || '-'));
                 }).catch((e) => report('sync invoke 失败: ' + e));
             }, 4200);
+
+            // 模拟在搜索框里打字：验证延迟过滤 + 高亮仍然工作
+            setTimeout(() => {
+                const input = document.querySelector('input');
+                if (!input) {
+                    report('search: 没有输入框');
+                    return;
+                }
+                const before = document.querySelectorAll('.card').length;
+                const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                setter.call(input, 'Node');
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                setTimeout(() => {
+                    report('search "' + input.value + '" cards ' + before + '→'
+                        + document.querySelectorAll('.card').length
+                        + ' marks=' + document.querySelectorAll('mark').length);
+                }, 400);
+            }, 900);
         })()"#;
         let _ = window.eval(script);
     });

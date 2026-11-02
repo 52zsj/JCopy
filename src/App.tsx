@@ -1,4 +1,14 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type MutableRefObject,
+  memo,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { api, type ClipView, type InviteInfo, type Settings, type SyncStatus } from "./api";
@@ -19,6 +29,8 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [pinnedOnly, setPinnedOnly] = useState(false);
   const [active, setActive] = useState(0);
+  // 卡片是 memo 的，不随父组件重渲染；"3 分钟前"要自己走时，否则会停住
+  const [now, setNow] = useState(() => Date.now());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [sync, setSync] = useState<SyncStatus | null>(null);
@@ -29,8 +41,9 @@ export default function App() {
   const [dirPath, setDirPath] = useState("");
 
   const inputRef = useRef<HTMLInputElement>(null);
-  const activeRef = useRef<HTMLElement>(null);
+  const activeRef = useRef<HTMLElement | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
+  const maxClipsRef = useRef(500);
 
   const refresh = useCallback(async () => {
     const data = await api.bootstrap();
@@ -50,7 +63,11 @@ export default function App() {
 
     void (async () => {
       const added = await listen<ClipView>("clip-added", (event) => {
-        setClips((prev) => [event.payload, ...prev.filter((c) => c.id !== event.payload.id)]);
+        setClips((prev) => {
+          const next = [event.payload, ...prev.filter((c) => c.id !== event.payload.id)];
+          // 面板长期隐藏时事件仍在累积，不裁剪的话数组会越滚越大，之后每次渲染都更慢
+          return next.length > maxClipsRef.current ? next.slice(0, maxClipsRef.current) : next;
+        });
       });
       const touched = await listen<string>("clip-touched", (event) => {
         setClips((prev) => {
@@ -111,15 +128,39 @@ export default function App() {
     return () => media.removeEventListener("change", apply);
   }, [settings?.theme, settings?.fontSize]);
 
+  // 设置弹窗打开时把焦点从搜索框挪走，否则用户打字会打进被遮住的输入框
+  useEffect(() => {
+    if (settingsOpen) {
+      inputRef.current?.blur();
+    } else {
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  }, [settingsOpen]);
+
+  // 相对时间每 30 秒走一次（卡片是 memo 的，不会因为别处重渲染而顺带刷新）
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 事件回调只注册一次，用 ref 取最新的上限值
+  useEffect(() => {
+    maxClipsRef.current = settings?.maxClips ?? 500;
+  }, [settings?.maxClips]);
+
+  // 搜索用延迟值：敲字时输入框立刻响应，列表过滤排到下一帧，
+  // 否则每按一个键都要对 500 条做一次 toLowerCase + 全量重渲染
+  const deferredQuery = useDeferredValue(query);
+
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = deferredQuery.trim().toLowerCase();
     return clips.filter((clip) => {
       if (pinnedOnly && !clip.pinned) return false;
       if (!q) return true;
       if (clip.preview.toLowerCase().includes(q)) return true;
       return appLabel(clip.sourceApp).toLowerCase().includes(q);
     });
-  }, [clips, query, pinnedOnly]);
+  }, [clips, deferredQuery, pinnedOnly]);
 
   useEffect(() => {
     setActive((index) => Math.min(index, Math.max(0, filtered.length - 1)));
@@ -129,19 +170,36 @@ export default function App() {
     activeRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [active]);
 
-  // 竖向滚轮转成横向滚动：卡片条是横的，用户不会去拖滚动条
+  // 竖向滚轮转成横向滚动：卡片条是横的，用户不会去拖滚动条。
+  // 触控板一次滚动会连发几十个 wheel 事件，这里累加后按帧提交，
+  // 否则每个事件都直接写 scrollLeft，滚动条会抖
   useEffect(() => {
     if (settingsOpen) return;
     const el = railRef.current;
     if (!el) return;
+
+    let pending = 0;
+    let frame = 0;
+    const flush = () => {
+      if (pending !== 0) {
+        el.scrollLeft += pending;
+        pending = 0;
+      }
+      frame = 0;
+    };
     const onWheel = (event: WheelEvent) => {
       if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
       event.preventDefault();
-      el.scrollLeft += event.deltaY;
+      pending += event.deltaY;
+      if (!frame) frame = requestAnimationFrame(flush);
     };
+
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [settingsOpen, filtered.length]);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [settingsOpen]);
 
   const paste = useCallback(async (id: string) => {
     try {
@@ -178,6 +236,9 @@ export default function App() {
       }
 
       if (settingsOpen) return;
+      // 空列表时别再走方向键逻辑：Math.min(i+1, -1) 会把 active 打成 -1，
+      // 之后 filtered[-1] 恒为 undefined，回车就永远不响应
+      if (!filtered.length) return;
 
       // 卡片是横向的，左右为主；上下也映射过去，免得肌肉记忆落空
       if (event.key === "ArrowRight" || event.key === "ArrowDown") {
@@ -740,76 +801,21 @@ export default function App() {
                   )}
                 </div>
               ) : (
-                filtered.map((clip, index) => {
-                  const remote = Boolean(clip.device) && clip.device !== deviceName;
-                  const kind = detectKind(clip.kind, clip.preview);
-                  const meta = KIND_META[kind];
-                  // 内容本身是色值时，色带直接用那个颜色
-                  const band =
-                    kind === "color" && /^#/.test(clip.preview.trim())
-                      ? clip.preview.trim().slice(0, 7)
-                      : meta.color;
-                  const style = {
-                    "--kind": band,
-                    "--kind-soft": meta.soft,
-                  } as CSSProperties;
-                  return (
-                    <article
-                      key={clip.id}
-                      ref={index === active ? activeRef : undefined}
-                      className={`card ${index === active ? "active" : ""} ${remote ? "remote" : ""} ${
-                        clip.pinned ? "pinned" : ""
-                      }`}
-                      style={style}
-                      onMouseEnter={() => setActive(index)}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => void paste(clip.id)}
-                    >
-                      <div className="card-head">
-                        <span className="kind">{meta.label}</span>
-                        <span className="time">{relativeTime(clip.createdAt)}</span>
-                      </div>
-                      <div className="card-sub">
-                        <span className={remote ? "app remote" : "app"}>
-                          {remote ? `来自 ${clip.device}` : appLabel(clip.sourceApp)}
-                        </span>
-                      </div>
-                      {clip.kind === "image" && clip.thumb ? (
-                        <div className="card-media">
-                          <img src={convertFileSrc(clip.thumb)} alt={clip.dims ?? "图片"} />
-                        </div>
-                      ) : (
-                        <div className="card-body">
-                          <Highlight text={clip.preview} query={query} />
-                        </div>
-                      )}
-                      <div className="card-foot">
-                        <span className="ord">{index + 1}</span>
-                        <span className="size">
-                          {clip.kind === "image" && clip.dims ? clip.dims : humanBytes(clip.bytes)}
-                        </span>
-                        <button
-                          className={`act ${clip.pinned ? "on" : ""}`}
-                          title={clip.pinned ? "取消收藏" : "收藏"}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void togglePin(clip.id);
-                          }}
-                        >
-                          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-                            <path
-                              d="M8 1.9l1.9 3.8 4.2.6-3.1 3 .7 4.2L8 11.5l-3.7 2 .7-4.2-3.1-3 4.2-.6z"
-                              fill={clip.pinned ? "currentColor" : "none"}
-                              stroke="currentColor"
-                              strokeWidth="1.2"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })
+                filtered.map((clip, index) => (
+                  <ClipCard
+                    key={clip.id}
+                    clip={clip}
+                    index={index}
+                    active={index === active}
+                    query={deferredQuery}
+                    remote={Boolean(clip.device) && clip.device !== deviceName}
+                    activeRef={activeRef}
+                    now={now}
+                    onHover={setActive}
+                    onPaste={paste}
+                    onPin={togglePin}
+                  />
+                ))
               )}
             </div>
         </>
@@ -863,3 +869,113 @@ function Highlight({ text, query }: { text: string; query: string }) {
     </>
   );
 }
+
+type ClipCardProps = {
+  clip: ClipView;
+  index: number;
+  active: boolean;
+  query: string;
+  remote: boolean;
+  activeRef: MutableRefObject<HTMLElement | null>;
+  now: number;
+  onHover: (index: number) => void;
+  onPaste: (id: string) => void;
+  onPin: (id: string) => void;
+};
+
+/**
+ * 单张卡片。抽成 memo 组件的原因：面板打开时 active / sync / toast 都在变，
+ * 内联渲染会把 500 张卡连同其中的闭包、SVG 全部重建一遍。
+ * 现在只有真正影响这张卡片的 props 变了才会重绘。
+ */
+const ClipCard = memo(function ClipCard({
+  clip,
+  index,
+  active,
+  query,
+  remote,
+  activeRef,
+  now,
+  onHover,
+  onPaste,
+  onPin,
+}: ClipCardProps) {
+  const kind = detectKind(clip.kind, clip.preview);
+  const meta = KIND_META[kind];
+  // 内容本身是色值时，色带直接用那个颜色
+  const band =
+    kind === "color" && /^#/.test(clip.preview.trim())
+      ? clip.preview.trim().slice(0, 7)
+      : meta.color;
+  const style = { "--kind": band, "--kind-soft": meta.soft } as CSSProperties;
+
+  // 用回调 ref 而不是条件 ref：memo 组件里直接给对象 ref 会有类型/派发问题，
+  // 这样 active 变化时 React 会先把旧的置空、再挂新的
+  const attachRef = useCallback(
+    (el: HTMLElement | null) => {
+      if (active) activeRef.current = el;
+    },
+    [active, activeRef],
+  );
+
+  return (
+    <article
+      ref={attachRef}
+      className={`card ${active ? "active" : ""} ${remote ? "remote" : ""} ${
+        clip.pinned ? "pinned" : ""
+      }`}
+      style={style}
+      onMouseEnter={() => onHover(index)}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => void onPaste(clip.id)}
+    >
+      <div className="card-head">
+        <span className="kind">{meta.label}</span>
+        <span className="time">{relativeTime(clip.createdAt, now)}</span>
+      </div>
+      <div className="card-sub">
+        <span className={remote ? "app remote" : "app"}>
+          {remote ? `来自 ${clip.device}` : appLabel(clip.sourceApp)}
+        </span>
+      </div>
+      {clip.kind === "image" && clip.thumb ? (
+        <div className="card-media">
+          <img
+            src={convertFileSrc(clip.thumb)}
+            alt={clip.dims ?? "图片"}
+            loading="lazy"
+            decoding="async"
+          />
+        </div>
+      ) : (
+        <div className="card-body">
+          <Highlight text={clip.preview} query={query} />
+        </div>
+      )}
+      <div className="card-foot">
+        <span className="ord">{index + 1}</span>
+        <span className="size">
+          {clip.kind === "image" && clip.dims ? clip.dims : humanBytes(clip.bytes)}
+        </span>
+        <button
+          className={`act ${clip.pinned ? "on" : ""}`}
+          title={clip.pinned ? "取消收藏" : "收藏"}
+          onClick={(e) => {
+            e.stopPropagation();
+            void onPin(clip.id);
+          }}
+        >
+          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+            <path
+              d="M8 1.9l1.9 3.8 4.2.6-3.1 3 .7 4.2L8 11.5l-3.7 2 .7-4.2-3.1-3 4.2-.6z"
+              fill={clip.pinned ? "currentColor" : "none"}
+              stroke="currentColor"
+              strokeWidth="1.2"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      </div>
+    </article>
+  );
+});

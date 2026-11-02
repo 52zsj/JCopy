@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.9.0
+
+一次系统性体检：修掉两处持续性的资源浪费、一批 Windows/跨平台问题，并把长列表渲染成本压下来。
+
+### 性能（影响最大）
+
+- **发件箱每 3 秒重写一次**：`last_push_hash` 取的是**密文**摘要，而 AES-GCM 每次加密都用新的
+  随机 nonce，同一份内容每次密文都不同 → 摘要永远不相等，于是每轮都重新加密/写盘，
+  iCloud 也就跟着持续重传。改成对**条目明文**取摘要后，内容不变就真的不写盘
+  （实测静置 9 秒 mtime 不变，新增内容后正常触发一次写入）
+- **剪贴板每 350ms 把整张图片读进内存算哈希**：复制一张截图后，监听线程会一直重复
+  读取数 MB 数据再算 SHA-256。改为先读系统级变更计数
+  （macOS `NSPasteboard.changeCount` / Windows `GetClipboardSequenceNumber`），
+  没变就直接跳过，内容根本不去读。空闲 CPU 约 0.7%
+- **500 张卡片全量重渲染**：卡片抽成 `memo` 组件，回调用 `useCallback` 固定；
+  搜索改用 `useDeferredValue`，输入框不再等列表过滤
+- 图片加 `loading="lazy"` + `decoding="async"`，卡片加 `contain: layout paint`，
+  不再一次性解码几百张缩略图
+- 共享目录清理从"每轮扫描"改为"十分钟一次"
+- 面板长期隐藏时 `clip-added` 持续累积，改为按 `maxClips` 裁剪
+
+### 跨平台
+
+- **Windows 多显示器**：修完面板总是出现在"窗口当前所在屏"。现在优先按**鼠标所在屏**定位
+  （用 Tauri 的 `cursor_position` + `available_monitors`，跨平台，不依赖各平台 API）
+- **缩略图路径**：`content.replace(".png", ".t.png")` 会把目录名里的 `.png` 一起替换
+  （`C:\a.png\id.png` → `C:\a.t.png\id.t.png`）。改用 `Path::with_extension`
+
+### 修复
+
+- 设备名在监听线程启动时被捕获一次，之后改名会让新条目继续挂着旧名字
+- 列表为空时按方向键会把 `active` 打成 -1，回车从此失效
+- 打开设置后焦点仍留在被遮住的搜索框，打字会打进去
+- 触控板滚动一次会连发几十个 wheel 事件，改为按帧合并 `scrollLeft`
+- `scrollIntoView` 命中时卡片会贴边被裁，补 `scroll-padding`
+
+### 未处理（有意保留）
+
+- `cocoa` → `objc2` 迁移：上游已废弃 `cocoa`，但迁移涉及所有 NSWindow/NSWorkspace 调用，
+  单独立项做；目前用文件级 `allow(deprecated)` 静音
+- 拉取侧每轮解密发件箱：单次约 1ms，改了反而增加缓存一致性风险
+- Linux 自动粘贴：Wayland 下无通用方案，保持"请手动粘贴"的明确提示
+
 ## 0.8.5
 
 清理编译警告。行为无变化，只是让构建输出重新变得可读。

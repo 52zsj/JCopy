@@ -26,6 +26,8 @@ const MAX_PEER_FILES: usize = 16;
 const SHARED_IMAGE_TTL_DAYS: u64 = 30;
 /// 发件箱多久没更新就算"旧配对残留"（解不开也不再报警）
 const STALE_OUTBOX_SECS: u64 = 10 * 60;
+/// 共享目录清理间隔：十分钟扫一次，不必每轮都扫
+const PRUNE_INTERVAL_MS: i64 = 10 * 60 * 1000;
 
 pub fn spawn(app: AppHandle, state: Arc<AppState>) {
     thread::spawn(move || loop {
@@ -142,8 +144,30 @@ fn push(
         })
         .collect();
 
+    // 清理过期图片不必每轮都扫目录，十分钟一次足够
     if image_mode != "off" {
-        prune_shared_images(&images_dir, &device.id);
+        let due = {
+            let rt = state.sync.lock().map_err(|e| e.to_string())?;
+            protocol::db_now_ms() - rt.last_prune_at > PRUNE_INTERVAL_MS
+        };
+        if due {
+            prune_shared_images(&images_dir, &device.id);
+            if let Ok(mut rt) = state.sync.lock() {
+                rt.last_prune_at = protocol::db_now_ms();
+            }
+        }
+    }
+
+    // 摘要只算「条目内容」，不能算整份 Outbox：updated_at 每轮都变，
+    // 更不能算密文——AES-GCM 每次用新 nonce，同一份内容密文也不同。
+    // 以前取密文摘要，导致每 3 秒都判定"有变化"，文件被反复重写、iCloud 反复重传。
+    let digest = digest_of(&serde_json::to_vec(&items).map_err(|e| e.to_string())?);
+
+    {
+        let rt = state.sync.lock().map_err(|e| e.to_string())?;
+        if rt.last_push_hash == digest {
+            return Ok(());
+        }
     }
 
     let outbox = Outbox {
@@ -154,15 +178,6 @@ fn push(
     };
 
     let sealed = protocol::seal_outbox(key, &device.id, &outbox).ok_or("发件箱加密失败")?;
-    let digest = digest_of(&sealed);
-
-    {
-        let rt = state.sync.lock().map_err(|e| e.to_string())?;
-        if rt.last_push_hash == digest {
-            return Ok(());
-        }
-    }
-
     let path = root.join("devices").join(format!("{}.enc", device.id));
     write_atomic(&path, &sealed).map_err(|e| e.to_string())?;
 

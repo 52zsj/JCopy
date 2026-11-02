@@ -51,9 +51,16 @@ impl Clip {
             last_used_at: self.last_used_at,
             pinned: self.pinned,
             bytes: self.bytes,
-            // 图片条目的 content 是原图路径，缩略图就放在旁边
+            // 图片条目的 content 是原图路径，缩略图就放在旁边。
+            // 用 Path 改扩展名，不要用 replace(".png", ...)：
+            // 那样会把目录名里的 .png 一起替换（C:\a.png\id.png → C:\a.t.png\id.t.png）
             thumb: if is_image {
-                Some(self.content.replace(".png", ".t.png"))
+                Some(
+                    std::path::Path::new(&self.content)
+                        .with_extension("t.png")
+                        .to_string_lossy()
+                        .into_owned(),
+                )
             } else {
                 None
             },

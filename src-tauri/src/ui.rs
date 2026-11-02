@@ -98,8 +98,12 @@ fn layout_drawer(w: &WebviewWindow, height: f64) {
         return;
     }
 
-    // 非 macOS 或取不到鼠标屏幕时，退回"窗口当前所在屏"
-    let Ok(Some(monitor)) = w.current_monitor() else {
+    // 非 macOS 或取不到鼠标屏幕时：优先取「鼠标所在屏」，
+    // 拿不到再退回「窗口当前所在屏」。
+    // 只退回 current_monitor 的话，多显示器下修完面板永远出现在同一个屏上，
+    // 而用户是在另一块屏里工作的。
+    let monitor = monitor_under_cursor(w).or_else(|| w.current_monitor().ok().flatten());
+    let Some(monitor) = monitor else {
         return;
     };
     let scale = monitor.scale_factor();
@@ -111,6 +115,22 @@ fn layout_drawer(w: &WebviewWindow, height: f64) {
     let logical_h = size.height as f64 / scale;
 
     resize_and_place(w, logical_x, logical_y + logical_h - height, logical_w, height);
+}
+
+/// 光标落在哪块屏上。跨平台，不需要各平台单独调系统 API。
+fn monitor_under_cursor(w: &WebviewWindow) -> Option<tauri::Monitor> {
+    let cursor = w.cursor_position().ok()?;
+    let monitors = w.available_monitors().ok()?;
+    monitors.into_iter().find(|monitor| {
+        let pos = monitor.position();
+        let size = monitor.size();
+        let left = pos.x as f64;
+        let top = pos.y as f64;
+        cursor.x >= left
+            && cursor.x < left + size.width as f64
+            && cursor.y >= top
+            && cursor.y < top + size.height as f64
+    })
 }
 
 /// 直接对 NSWindow 调 `setFrame:display:`。

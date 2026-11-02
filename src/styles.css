@@ -1277,3 +1277,13 @@ mark {
 .diag-line.stale .diag-meta {
   color: var(--text-faint);
 }
+
+/* 500 张卡时把每张卡的布局/绘制隔离开，滚动时避免整条链重排 */
+.card {
+  contain: layout paint;
+}
+
+/* scrollIntoView({inline:"nearest"}) 命中时留出内边距，卡片不会贴边被裁 */
+.rail {
+  scroll-padding-inline: 20px;
+}

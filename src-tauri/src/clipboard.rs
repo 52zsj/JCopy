@@ -26,14 +26,23 @@ pub fn spawn(app: AppHandle, state: Arc<AppState>) {
             }
         };
 
-        let device = state.settings.lock().unwrap().device_name.clone();
         let mut last_hash = String::new();
+        // 系统级变更计数：没变就完全不必读剪贴板内容。
+        // 之前每 350ms 无条件 get_image()，一张截图会被反复拷进内存再算 SHA-256。
+        let mut last_seq: Option<i64> = None;
 
         loop {
             thread::sleep(POLL_INTERVAL);
 
             if state.paused.load(Ordering::Relaxed) {
                 continue;
+            }
+
+            if let Some(seq) = platform::clipboard_seq() {
+                if last_seq == Some(seq) {
+                    continue;
+                }
+                last_seq = Some(seq);
             }
 
             let text = clipboard.get_text().ok().filter(|t| !t.trim().is_empty());
@@ -77,9 +86,11 @@ pub fn spawn(app: AppHandle, state: Arc<AppState>) {
                 }
             }
 
-            let (max_clips, max_bytes) = {
+            // 每次入库都重新读设置：设备名可能在设置里被改过，
+            // 用启动时抓的那份会让新条目挂着旧名字
+            let (max_clips, max_bytes, device) = {
                 let s = state.settings.lock().unwrap();
-                (s.max_clips, s.max_bytes)
+                (s.max_clips, s.max_bytes, s.device_name.clone())
             };
 
             let inserted = if let Some(t) = &text {

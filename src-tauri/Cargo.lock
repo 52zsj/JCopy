@@ -1880,7 +1880,7 @@ dependencies = [
 
 [[package]]
 name = "jcopy"
-version = "0.8.5"
+version = "0.9.0"
 dependencies = [
  "aes-gcm",
  "arboard",

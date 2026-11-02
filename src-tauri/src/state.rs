@@ -31,10 +31,13 @@ pub struct SyncRuntime {
     pub enabled: bool,
     pub key: Option<Key>,
     pub dir: Option<PathBuf>,
-    /// 上次写入的密文哈希，用于避免无变化的重复写盘（iCloud 对高频小文件写入有节流）
+    /// 上次写入的**明文**摘要，用于避免无变化的重复写盘
+    /// （密文每次 nonce 不同，拿密文做摘要等于每轮都判定为"有变化"）
     pub last_push_hash: String,
     pub last_push_at: i64,
     pub last_pull_at: i64,
+    /// 上次清理共享目录过期图片的时间，避免每轮都去扫目录
+    pub last_prune_at: i64,
     pub last_error: Option<String>,
     pub peers: HashMap<String, PeerStatus>,
 }
