@@ -108,6 +108,47 @@ jobs:
           if-no-files-found: error
           path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
 
+  # 打完包后把安装包挂到 Release，这样在 Releases 页面能直接下载，
+  # 不用进 Actions 的 Artifacts（后者要登录、90 天过期、入口还很深）
+  release:
+    name: 发布到 Release
+    needs: [macos, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 整理安装包
+        run: |
+          mkdir -p dist
+          find artifacts -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' \) -exec cp {} dist/ \;
+          ls -lh dist
+
+      - name: 生成版本说明
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v v="## $VERSION" 'index($0,v)==1{f=1;next} f&&/^## /{exit} f' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then printf 'JCopy %s\n' "$VERSION" > notes.md; fi
+          head -5 notes.md
+
+      - name: 创建或更新 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --title "JCopy ${GITHUB_REF_NAME#v}" \
+              --notes-file notes.md
+          fi
+
   # 三平台都成功时才打一个汇总说明，方便在 Actions 页面直接看到该装哪个
   summary:
     name: 汇总
