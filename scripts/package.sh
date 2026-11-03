@@ -18,21 +18,24 @@ if [ -n "$TARGET" ]; then
     x86_64-*)  ARCH="x64" ;;
     *)         ARCH="${TARGET%%-*}" ;;
   esac
-  BUILD_ARGS="--target $TARGET"
   OUT_SUFFIX="$TARGET/release"
 else
   ARCH=$(uname -m)
-  BUILD_ARGS=""
   OUT_SUFFIX="release"
 fi
 export PATH="$HOME/.cargo/bin:$PATH"
 
 echo "==> 构建 JCopy $VERSION ($ARCH)"
 # 传 --skip-build 时复用已有的 .app；否则重新构建前端与 Rust
+# 注意：zsh 默认不对未加引号的变量做词分割，`$BUILD_ARGS` 会被当成**一个**参数传给
+# tauri（报 "unexpected argument '--target aarch64-apple-darwin'"）。这里必须显式分支。
 if [ "${JCOPY_SKIP_BUILD:-0}" = "1" ]; then
   echo "    (跳过构建，复用现有 .app)"
+elif [ -n "$TARGET" ]; then
+  echo "    (交叉构建 $TARGET)"
+  npm run app:build -- --bundles app --target "$TARGET"
 else
-  npm run app:build -- --bundles app $BUILD_ARGS
+  npm run app:build -- --bundles app
 fi
 
 APP="src-tauri/target/$OUT_SUFFIX/bundle/macos/JCopy.app"
