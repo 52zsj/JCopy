@@ -88,9 +88,19 @@ jobs:
       - name: 打包
         run: npm run app:build -- --target x86_64-pc-windows-msvc --bundles nsis
 
+      # 这里必须是 PowerShell 语法：runner 默认 shell 是 pwsh，
+      # `ls` 只是 Get-ChildItem 的别名，不认 unix 的 -lhR（会直接让 job 失败，
+      # 连带后面的上传步骤也不执行）
       - name: 产物清单
         if: always()
-        run: ls -lhR src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis 2>$null
+        shell: pwsh
+        run: |
+          $dir = "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
+          if (Test-Path $dir) {
+            Get-ChildItem -Recurse $dir | Select-Object FullName, Length | Format-Table -AutoSize
+          } else {
+            Write-Host "目录不存在：$dir —— 打包步骤没有产出安装器"
+          }
 
       - uses: actions/upload-artifact@v4
         with:
