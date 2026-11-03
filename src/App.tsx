@@ -36,10 +36,6 @@ export default function App() {
   // 卡片的右键菜单：位置 + 作用对象
   const [menu, setMenu] = useState<{ x: number; y: number; clip: ClipView } | null>(null);
   const [sync, setSync] = useState<SyncStatus | null>(null);
-  // 配对串：把主密钥编码成文本，复制到另一台粘贴即可，不经过云盘
-  const [pairToken, setPairToken] = useState<string | null>(null);
-  const [joinOpen, setJoinOpen] = useState(false);
-  const [joinToken, setJoinToken] = useState("");
   const [dirOpen, setDirOpen] = useState(false);
   const [dirPath, setDirPath] = useState("");
 
@@ -321,61 +317,6 @@ export default function App() {
     };
   }, [settingsOpen]);
 
-  const copyToken = useCallback(async () => {
-    if (!pairToken) return;
-    try {
-      await api.copyIgnored(pairToken);
-      setToast("配对串已复制，到另一台粘贴即可");
-    } catch (error) {
-      setToast(typeof error === "string" ? error : "复制失败");
-    }
-  }, [pairToken]);
-
-  const joinWithToken = useCallback(async () => {
-    try {
-      const message = await api.syncJoinToken(joinToken);
-      setJoinToken("");
-      setJoinOpen(false);
-      setToast(message);
-      setSync(await api.syncStatus(true));
-    } catch (error) {
-      setToast(typeof error === "string" ? error : "配对失败");
-    }
-  }, [joinToken]);
-
-  const createPairToken = useCallback(async () => {
-    try {
-      const token = await api.syncPairString();
-      setPairToken(token);
-      // 一步到位：生成即复制，不用再点一次
-      await api.copyIgnored(token);
-      setSync(await api.syncStatus(false));
-      setToast("配对串已复制，到另一台粘贴即可");
-    } catch (error) {
-      setToast(typeof error === "string" ? error : "生成配对串失败");
-    }
-  }, []);
-
-  const runSyncNow = useCallback(async () => {
-    try {
-      await api.syncNow();
-      setSync(await api.syncStatus());
-      setToast("已同步");
-    } catch (error) {
-      setToast(typeof error === "string" ? error : "同步失败");
-    }
-  }, []);
-
-  const resetSync = useCallback(async () => {
-    try {
-      await api.syncReset();
-      setSync(await api.syncStatus());
-      setToast("已解除配对");
-    } catch (error) {
-      setToast(typeof error === "string" ? error : "操作失败");
-    }
-  }, []);
-
   const applyDir = useCallback(async () => {
     try {
       await api.syncSetDir(dirPath.trim());
@@ -411,6 +352,16 @@ export default function App() {
     const next = await api.setPaused(!paused);
     setPaused(next);
   }, [paused]);
+
+  const runSyncNow = useCallback(async () => {
+    try {
+      await api.syncNow();
+      setSync(await api.syncStatus(true));
+      setToast("已同步");
+    } catch (error) {
+      setToast(typeof error === "string" ? error : "同步失败");
+    }
+  }, []);
 
   const deviceName = settings?.deviceName ?? "";
   const isMac = navigator.userAgent.includes("Mac");
@@ -558,40 +509,6 @@ export default function App() {
 
               <div className="group-title">跨设备同步</div>
 
-              {pairToken && (
-                <div className="invite-card">
-                  <div className="invite-token-text">{pairToken}</div>
-                  <div className="invite-hint">
-                    已复制到剪贴板，到另一台「粘贴配对串」粘进去即可。
-                  </div>
-                  <button className="ghost invite-token" onClick={() => void copyToken()}>
-                    再复制一次
-                  </button>
-                </div>
-              )}
-
-              {joinOpen && (
-                <>
-                  <div className="join-row">
-                    <input
-                      value={joinToken}
-                      onChange={(e) => setJoinToken(e.target.value.trim())}
-                      placeholder="粘贴配对串 JCP1.…"
-                      spellCheck={false}
-                      autoComplete="off"
-                      autoFocus
-                    />
-                    <button
-                      className="ghost"
-                      onClick={() => void joinWithToken()}
-                      disabled={!joinToken}
-                    >
-                      配对
-                    </button>
-                  </div>
-                </>
-              )}
-
               {sync?.peers.map((peer) => (
                 <div className="row static" key={peer.id}>
                   <span>
@@ -605,49 +522,16 @@ export default function App() {
                 </div>
               ))}
 
-              {!sync?.paired ? (
-                <>
-                  <button className="row" onClick={() => void createPairToken()}>
-                    <span>
-                      生成配对串
-                      <em>让另一台设备输入这个码</em>
-                    </span>
-                    <span className="chev">→</span>
-                  </button>
-                  <button
-                    className="row"
-                    onClick={() => {
-                      setJoinOpen((v) => !v);
-                      setPairToken(null);
-                    }}
-                  >
-                    <span>
-                      粘贴配对串
-                      <em>在另一台点「生成配对串」，复制过来粘贴</em>
-                    </span>
-                    <span className="chev">→</span>
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button className="row" onClick={() => void runSyncNow()}>
-                    <span>
-                      立即同步
-                      <em>
-                        {sync.lastPullAt
-                          ? `上次同步 ${relativeTime(sync.lastPullAt)}`
-                          : "尚未同步过"}
-                      </em>
-                    </span>
-                  </button>
-                  <button className="row danger" onClick={() => void resetSync()}>
-                    <span>
-                      解除配对
-                      <em>清除本机同步密钥，已复制的历史不受影响</em>
-                    </span>
-                  </button>
-                </>
-              )}
+              <button className="row" onClick={() => void runSyncNow()}>
+                <span>
+                  立即同步
+                  <em>
+                    {sync?.lastPullAt
+                      ? `上次同步 ${relativeTime(sync.lastPullAt)}`
+                      : "尚未同步过"}
+                  </em>
+                </span>
+              </button>
 
               <button
                 className="row"
@@ -703,13 +587,12 @@ export default function App() {
                 </div>
               )}
 
-              {sync?.paired && (
+              {sync && (
                 <div className="sync-diag">
                   <div className="diag-head">
-                    <span>配对指纹</span>
-                    <code>{sync.keyFingerprint ?? "—"}</code>
+                    <span>同步详情</span>
                     <span className="diag-hint">
-                      两台机器一致才能互通 · 本机发布 {sync.ownClips} 条
+                      本机发布 {sync.ownClips} 条 · 共享目录图片 {sync.sharedImages} 张
                     </span>
                   </div>
 
@@ -742,9 +625,8 @@ export default function App() {
                     (f) => !f.isSelf && !f.decryptable && !f.stale,
                   ) && (
                     <div className="diag-warn">
-                      对方的发件箱解不开，说明两台机器的主密钥不是同一把。
-                      两台设备必须用同一把主密钥。请在一台点「生成配对串」，
-                      复制到另一台「粘贴配对串」重新配对。
+                      有发件箱读不了——多半是旧版本（0.9.7 及更早）写的文件，
+                      新版本不用配对，直接忽略即可；旧文件可以删掉。
                     </div>
                   )}
 
@@ -793,27 +675,22 @@ export default function App() {
                 {sync && (
                   <button
                     className={`sync-chip ${
-                      !sync.enabled || !sync.paired
+                      !sync.enabled
                         ? "off"
                         : sync.lastError
                           ? "bad"
-                          : sync.mismatchedPeers > 0
+                          : sync.waitingImages > 0 || sync.pendingImages > 0
                             ? "pending"
-                            : sync.waitingImages > 0 || sync.pendingImages > 0
-                              ? "pending"
-                              : sync.dirFreeMb < 200
-                                ? "bad"
-                                : "ok"
+                            : sync.dirFreeMb < 200
+                              ? "bad"
+                              : "ok"
                     }`}
                     title={
                       !sync.enabled
                         ? "跨设备同步未开启 · 点击去开启"
-                        : !sync.paired
-                          ? "已开启同步但还没配对 · 点开生成/粘贴配对串"
-                          : (sync.lastError ??
+                        : (sync.lastError ??
                               (sync.mismatchedPeers > 0
-                                ? `共享目录里有 ${sync.mismatchedPeers} 台设备的发件箱本机解不开（密钥不一致）。` +
-                                  "两台必须用同一把密钥，点开重新配对 · "
+                                ? `共享目录里有 ${sync.mismatchedPeers} 个旧版本（0.9.7 及更早）写的文件读不了 · `
                                 : "") +
                               `发出 ${sync.pushedClips} 条（${sync.pushedImages} 图）· 收到 ${sync.pulledClips} 条（${sync.pulledImages} 图）` +
                                 (sync.pendingImages > 0
@@ -827,19 +704,15 @@ export default function App() {
                     <span>
                       {!sync.enabled
                         ? "同步未开启"
-                        : !sync.paired
-                          ? "待配对"
-                          : sync.lastError
-                            ? "同步异常"
-                            : sync.mismatchedPeers > 0
-                              ? `${sync.mismatchedPeers} 台密钥不匹配`
-                              : sync.waitingImages > 0
-                                ? `${sync.waitingImages} 张图待传`
-                                : sync.dirFreeMb < 200
-                                  ? "磁盘将满"
-                                  : `↑${sync.pushedClips} ↓${sync.pulledClips}`}
+                        : sync.lastError
+                          ? "同步异常"
+                          : sync.waitingImages > 0
+                            ? `${sync.waitingImages} 张图待传`
+                            : sync.dirFreeMb < 200
+                              ? "磁盘将满"
+                              : `↑${sync.pushedClips} ↓${sync.pulledClips}`}
                     </span>
-                    {sync.enabled && sync.paired && !sync.lastError && (
+                    {sync.enabled && !sync.lastError && (
                       <em>
                         图 {sync.pushedImages}/{sync.pulledImages}
                       </em>

@@ -7,7 +7,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::model::{ClipView, Settings};
 use crate::state::{save_settings, AppState, PeerStatus};
-use crate::sync::{crypto, engine, protocol};
+use crate::sync::{engine, protocol};
 use crate::{db, platform};
 
 #[derive(serde::Serialize)]
@@ -263,7 +263,6 @@ pub struct PeerFile {
 #[serde(rename_all = "camelCase")]
 pub struct SyncStatus {
     pub enabled: bool,
-    pub paired: bool,
     pub dir: String,
     pub dir_exists: bool,
     pub is_icloud: bool,
@@ -275,7 +274,6 @@ pub struct SyncStatus {
     pub last_error: Option<String>,
     /// 同网段发现的设备数（局域网直连可用性）
     /// 主密钥指纹，两台机器对比即可判断是否配到同一把密钥
-    pub key_fingerprint: Option<String>,
     /// 本机发件箱里实际发了多少条（0 说明过滤后没东西可发）
     pub own_clips: usize,
     /// 最近一次发出去的内容：总条数 / 其中图片张数
@@ -310,18 +308,6 @@ fn current_sync_dir(state: &AppState) -> PathBuf {
         .unwrap_or_else(crate::state::default_sync_dir)
 }
 
-fn decode_b64_key(b64: &str) -> Option<crypto::Key> {
-    use base64::engine::general_purpose::STANDARD as B64;
-    use base64::Engine;
-    let bytes = B64.decode(b64).ok()?;
-    if bytes.len() != 32 {
-        return None;
-    }
-    let mut key = [0u8; 32];
-    key.copy_from_slice(&bytes);
-    Some(key)
-}
-
 #[tauri::command]
 pub fn sync_status(
     state: State<'_, Arc<AppState>>,
@@ -337,7 +323,6 @@ pub fn sync_status(
 
     let (
         enabled,
-        key,
         last_push_at,
         last_pull_at,
         last_error,
@@ -356,7 +341,6 @@ pub fn sync_status(
         peers.sort_by(|a, b| a.name.cmp(&b.name));
         (
             rt.enabled,
-            rt.key,
             rt.last_push_at,
             rt.last_pull_at,
             rt.last_error.clone(),
@@ -406,9 +390,8 @@ pub fn sync_status(
             let mut missing_images = 0usize;
             let mut error = None;
 
-            match (key, fs::read(&path)) {
-                (None, _) => error = Some("本机还没有主密钥（未配对）".into()),
-                (Some(k), Ok(blob)) => match protocol::open_outbox(&k, &id, &blob) {
+            match fs::read(&path) {
+                Ok(blob) => match protocol::open_outbox(&id, &blob) {
                     Some(outbox) => {
                         decryptable = true;
                         clips = outbox.clips.len();
@@ -432,10 +415,10 @@ pub fn sync_status(
                             }
                         }
                     }
-                    None if is_self => error = Some("本机发件箱解不开（密钥或文件异常）".into()),
-                    None => error = Some("解不开：这台机器的主密钥与对方不一致".into()),
+                    None if is_self => error = Some("本机发件箱解不开（文件可能损坏）".into()),
+                    None => error = Some("旧版本（0.9.7 及更早）写的文件，密钥不同，读不了".into()),
                 },
-                (Some(_), Err(err)) => error = Some(format!("读取失败：{err}")),
+                Err(err) => error = Some(format!("读取失败：{err}")),
             }
 
             // 解不开、又不是自己写的、而且十分钟没动过 → 多半是上一次配对留下的旧文件。
@@ -472,7 +455,6 @@ pub fn sync_status(
 
     Ok(SyncStatus {
         enabled,
-        paired: key.is_some(),
         dir: dir.display().to_string(),
         dir_exists: dir.is_dir(),
         is_icloud,
@@ -482,7 +464,6 @@ pub fn sync_status(
         last_push_at,
         last_pull_at,
         last_error,
-        key_fingerprint: key.map(|k| crypto::fingerprint(&k)),
         own_clips,
         peer_files,
         pushed_clips,
@@ -584,98 +565,9 @@ pub fn sync_set_enabled(state: State<'_, Arc<AppState>>, enabled: bool) -> Resul
     Ok(())
 }
 
-/// 生成配对串：把主密钥编码成一串可复制文本，直接粘贴到另一台即可。
-///
-/// 不再生成 6 位码 + 邀请文件——那套要求邀请文件先通过云盘传到另一台，
-/// 云盘一卡就表现为"码是新的，对面却提示已失效"。
-#[tauri::command]
-pub fn sync_pair_string(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    use base64::engine::general_purpose::STANDARD as B64;
-    use base64::Engine;
-
-    let existing = {
-        let rt = state.sync.lock().map_err(|e| e.to_string())?;
-        rt.key
-    };
-    let key = match existing {
-        Some(k) => k,
-        None => {
-            let k = crypto::random_key();
-            {
-                let mut rt = state.sync.lock().map_err(|e| e.to_string())?;
-                rt.key = Some(k);
-                rt.enabled = true;
-            }
-            {
-                let mut cfg = state.settings.lock().map_err(|e| e.to_string())?;
-                cfg.sync_key = Some(B64.encode(k));
-                cfg.sync_enabled = true;
-                save_settings(&state.config_dir, &cfg);
-            }
-            k
-        }
-    };
-    Ok(format!("JCP1.{}", B64.encode(key)))
-}
-
-/// 用「配对串」直接配对：不走云盘、不读文件，复制粘贴即可。
-///
-/// 云盘空间满或同步没到位时，邀请文件可能一直传不到另一台，
-/// 表现为"码是新的，但对面说已失效"。配对串绕开这条通道。
-#[tauri::command]
-pub fn sync_join_token(state: State<'_, Arc<AppState>>, token: String) -> Result<String, String> {
-    let raw = token
-        .trim()
-        .strip_prefix("JCP1.")
-        .ok_or("配对串格式不对，应该以 JCP1. 开头")?;
-    let key = decode_b64_key(raw).ok_or("配对串内容损坏，请重新复制")?;
-
-    {
-        let mut rt = state.sync.lock().map_err(|e| e.to_string())?;
-        rt.key = Some(key);
-        rt.enabled = true;
-        rt.last_push_hash.clear();
-        rt.mismatched_peers = 0;
-    }
-    {
-        use base64::engine::general_purpose::STANDARD as B64;
-        use base64::Engine;
-        let mut s = state.settings.lock().map_err(|e| e.to_string())?;
-        s.sync_key = Some(B64.encode(key));
-        s.sync_enabled = true;
-        save_settings(&state.config_dir, &s);
-    }
-    Ok("配对成功".into())
-}
-
-/// 复制一段文本并让监听线程忽略它（配对串不该进历史）
-#[tauri::command]
-pub fn copy_ignored(state: State<'_, Arc<AppState>>, text: String) -> Result<(), String> {
-    {
-        let mut cb = arboard::Clipboard::new().map_err(|e| format!("剪贴板不可用：{e}"))?;
-        cb.set_text(text.clone())
-            .map_err(|e| format!("写入剪贴板失败：{e}"))?;
-    }
-    *state.ignore_hash.lock().unwrap() = Some(db::hash_text(&text));
-    Ok(())
-}
-
 #[tauri::command]
 pub fn sync_now(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let inner = state.inner().clone();
     engine::sync_once(&app, &inner)
 }
 
-#[tauri::command]
-pub fn sync_reset(state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    {
-        let mut s = state.settings.lock().map_err(|e| e.to_string())?;
-        s.sync_key = None;
-        save_settings(&state.config_dir, &s);
-    }
-    let mut rt = state.sync.lock().map_err(|e| e.to_string())?;
-    rt.key = None;
-    rt.peers.clear();
-    rt.last_push_hash.clear();
-    Ok(())
-}

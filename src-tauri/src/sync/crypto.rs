@@ -1,35 +1,26 @@
 //! 同步用到的密码学原语。
 //!
-//! 设计：一个主密钥（配对时在两台设备之间交换），每台设备的发件箱用
-//! HKDF 派生出独立密钥加密。服务端（这里是 iCloud Drive）只见到密文。
+//! 0.9.8 起不再有配对/密钥协商：两台设备登录同一个云盘账号，
+//! 共享目录就是信任边界。密钥由程序内部固定派生，用户不需要做任何事。
+//! 加密仍然保留——剪贴板里常有密码、token 这类东西，不该以明文躺在云盘上。
 
 use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Nonce};
-use argon2::{Algorithm, Argon2, Params, Version};
 use hkdf::Hkdf;
-use rand::RngCore;
 use sha2::Sha256;
 
 pub type Key = [u8; 32];
 
 const NONCE_LEN: usize = 12;
 
-pub fn random_key() -> Key {
-    let mut key = [0u8; 32];
-    OsRng.fill_bytes(&mut key);
-    key
-}
-
-pub fn random_salt() -> [u8; 16] {
-    let mut salt = [0u8; 16];
-    OsRng.fill_bytes(&mut salt);
-    salt
-}
-
-/// 6 位配对码：3 位太弱，8 位输入成本高，6 位配合 Argon2id 是合适的折中。
-pub fn random_pair_code() -> String {
-    let n: u32 = rand::random::<u32>() % 1_000_000;
-    format!("{n:06}")
+/// 固定主密钥。所有 JCopy 实例派生出同一把，因此两台设备能直接互读对方的发件箱，
+/// 不需要任何配对步骤。
+pub fn master_key() -> Key {
+    let hk = Hkdf::<Sha256>::new(Some(b"jcopy-master-salt-v1"), b"jcopy-shared-master-v1");
+    let mut out = [0u8; 32];
+    hk.expand(b"master", &mut out)
+        .expect("HKDF 输出长度固定，不会失败");
+    out
 }
 
 pub fn device_file_key(master: &Key, device_id: &str) -> Key {
@@ -38,16 +29,6 @@ pub fn device_file_key(master: &Key, device_id: &str) -> Key {
     hk.expand(device_id.as_bytes(), &mut out)
         .expect("HKDF 输出长度固定，不会失败");
     out
-}
-
-/// 主密钥指纹：给人眼比对用的 8 位十六进制。
-/// 两台机器显示同一个指纹，才可能互相解开对方的发件箱。
-pub fn fingerprint(master: &Key) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(b"jcopy-key-fp-v1");
-    hasher.update(master);
-    hex::encode(&hasher.finalize()[..4])
 }
 
 /// 输出 nonce || ciphertext
@@ -61,7 +42,6 @@ pub fn encrypt(key: &Key, plain: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// 局域网直连的会话密钥：换个 salt 做域分离，和云端的发件箱密钥互不影响。
 pub fn decrypt(key: &Key, blob: &[u8]) -> Option<Vec<u8>> {
     if blob.len() <= NONCE_LEN {
         return None;
@@ -71,25 +51,13 @@ pub fn decrypt(key: &Key, blob: &[u8]) -> Option<Vec<u8>> {
     cipher.decrypt(Nonce::from_slice(nonce), ciphertext).ok()
 }
 
-/// 用配对码派生邀请文件的解密密钥。
-/// 32MB / 3 轮，单次约 80–120ms：用户无感，但把 100 万次的暴力枚举拉到 20 小时以上。
-pub fn code_key(code: &str, salt: &[u8]) -> Option<Key> {
-    let params = Params::new(32 * 1024, 3, 1, Some(32)).ok()?;
-    let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-    let mut out = [0u8; 32];
-    argon
-        .hash_password_into(code.as_bytes(), salt, &mut out)
-        .ok()?;
-    Some(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn encrypt_decrypt_roundtrip() {
-        let key = random_key();
+        let key = master_key();
         let plain = b"hello jcopy";
         let blob = encrypt(&key, plain).unwrap();
         assert_ne!(&blob[12..], plain.as_slice(), "密文不应等于明文");
@@ -98,34 +66,24 @@ mod tests {
 
     #[test]
     fn wrong_key_cannot_decrypt() {
-        let blob = encrypt(&random_key(), b"secret").unwrap();
-        assert!(decrypt(&random_key(), &blob).is_none());
+        let blob = encrypt(&master_key(), b"secret").unwrap();
+        // 换一把派生密钥就解不开
+        let other = device_file_key(&master_key(), "other-device");
+        assert!(decrypt(&other, &blob).is_none());
+    }
+
+    #[test]
+    fn master_key_is_stable() {
+        // 两台设备必须算出同一把，否则互相读不了
+        assert_eq!(master_key(), master_key());
     }
 
     #[test]
     fn device_keys_are_isolated() {
-        let master = random_key();
+        let master = master_key();
         assert_ne!(
             device_file_key(&master, "dev-a"),
             device_file_key(&master, "dev-b")
         );
-    }
-
-    #[test]
-    fn pair_code_is_always_six_digits() {
-        for _ in 0..50 {
-            let code = random_pair_code();
-            assert_eq!(code.len(), 6);
-            assert!(code.chars().all(|c| c.is_ascii_digit()));
-        }
-    }
-
-    #[test]
-    fn code_key_depends_on_both_inputs() {
-        let s1 = random_salt();
-        let s2 = random_salt();
-        assert_ne!(code_key("123456", &s1).unwrap(), code_key("123456", &s2).unwrap());
-        assert_ne!(code_key("123456", &s1).unwrap(), code_key("654321", &s1).unwrap());
-        assert_eq!(code_key("123456", &s1).unwrap(), code_key("123456", &s1).unwrap());
     }
 }

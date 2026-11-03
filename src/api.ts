@@ -67,7 +67,6 @@ export type PeerFile = {
 
 export type SyncStatus = {
   enabled: boolean;
-  paired: boolean;
   dir: string;
   dirExists: boolean;
   isIcloud: boolean;
@@ -78,7 +77,6 @@ export type SyncStatus = {
   lastPullAt: number;
   lastError: string | null;
   /** 主密钥指纹：两台机器一致才可能互相解密 */
-  keyFingerprint: string | null;
   /** 本机发件箱里实际发布了多少条 */
   ownClips: number;
   /** 最近一次发出去：总条数 / 其中图片张数 */
@@ -119,9 +117,5 @@ export const api = {
   syncStatus: (deep = false) => invoke<SyncStatus>("sync_status", { deep }),
   syncSetDir: (path: string) => invoke<void>("sync_set_dir", { path }),
   syncSetEnabled: (enabled: boolean) => invoke<void>("sync_set_enabled", { enabled }),
-  syncPairString: () => invoke<string>("sync_pair_string"),
-  syncJoinToken: (token: string) => invoke<string>("sync_join_token", { token }),
-  copyIgnored: (text: string) => invoke<void>("copy_ignored", { text }),
   syncNow: () => invoke<void>("sync_now"),
-  syncReset: () => invoke<void>("sync_reset"),
 };

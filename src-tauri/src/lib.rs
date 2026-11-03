@@ -79,11 +79,7 @@ pub fn run() {
             commands::sync_status,
             commands::sync_set_dir,
             commands::sync_set_enabled,
-            commands::sync_pair_string,
-            commands::sync_join_token,
-            commands::copy_ignored,
             commands::sync_now,
-            commands::sync_reset,
         ])
         .on_window_event(|window, event| match event {
             // 点面板外任意位置即收起，这是剪贴板工具的标配行为
@@ -179,7 +175,7 @@ fn probe_dom(app: &tauri::AppHandle) {
                                 + (f.missingImages ? '(缺' + f.missingImages + ')' : '')
                             : f.stale ? 'STALE' : 'BAD');
                     }).join(',');
-                    report('sync fp=' + (st.keyFingerprint || '-') + ' own=' + st.ownClips
+                    report('sync own=' + st.ownClips
                         + ' shared=' + (st.sharedImages ?? 0) + ' wait=' + (st.waitingImages ?? 0)
                         + ' files=[' + files + '] err=' + (st.lastError || '-'));
                 }).catch((e) => report('sync invoke 失败: ' + e));
@@ -202,19 +198,6 @@ fn probe_dom(app: &tauri::AppHandle) {
                         + ' marks=' + document.querySelectorAll('mark').length);
                 }, 400);
             }, 900);
-
-            // 配对串：生成 → 直接用它配对，验证"不依赖云盘"这条路真的通
-            setTimeout(() => {
-                const inv = window.__TAURI_INTERNALS__.invoke;
-                inv('sync_pair_string')
-                    .then((token) => inv('sync_status', { deep: false })
-                        .then((before) => inv('sync_join_token', { token })
-                            .then((msg) => inv('sync_status', { deep: false })
-                                .then((after) => report('配对串 ' + token.slice(0, 10) + '… fp '
-                                    + (before.keyFingerprint || '-') + '→' + (after.keyFingerprint || '-')
-                                    + ' msg=' + msg)))))
-                    .catch((e) => report('配对串测试失败: ' + e));
-            }, 6200);
 
             // 右键菜单：先清空搜索（否则可能一张卡都没有），再派发 contextmenu
             setTimeout(() => {

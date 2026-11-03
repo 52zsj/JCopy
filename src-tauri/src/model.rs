@@ -110,7 +110,6 @@ pub struct Settings {
     pub hotkey: String,
     pub sync_enabled: bool,
     /// 同步主密钥（base64）。配对后写入，配置文件权限收紧到 600。
-    pub sync_key: Option<String>,
     /// 自定义同步目录；为空时自动探测 iCloud 云盘
     pub sync_dir: Option<String>,
     /// 不记录复制内容的应用（bundle id / 进程名）
@@ -134,7 +133,6 @@ impl Default for Settings {
             max_bytes: 200 * 1024 * 1024,
             hotkey: "CommandOrControl+Shift+V".into(),
             sync_enabled: true,
-            sync_key: None,
             sync_dir: None,
             blacklist: default_blacklist(),
             theme: "system".into(),

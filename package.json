@@ -1,7 +1,7 @@
 {
   "name": "jcopy",
   "private": true,
-  "version": "0.9.7",
+  "version": "0.9.8",
   "type": "module",
   "description": "跨平台轻量剪贴板共享工具",
   "scripts": {

@@ -9,7 +9,6 @@ use tauri::{AppHandle, Manager};
 
 use crate::db;
 use crate::model::Settings;
-use crate::sync::crypto::Key;
 
 /// 一台已配对设备在最近一次扫描中的状态。
 #[derive(Serialize, Clone, Debug, Default)]
@@ -28,7 +27,6 @@ pub struct PeerStatus {
 #[derive(Default)]
 pub struct SyncRuntime {
     pub enabled: bool,
-    pub key: Option<Key>,
     pub dir: Option<PathBuf>,
     /// 上次写入的**明文**摘要，用于避免无变化的重复写盘
     /// （密文每次 nonce 不同，拿密文做摘要等于每轮都判定为"有变化"）
@@ -89,7 +87,6 @@ pub fn init(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
 
     let sync = SyncRuntime {
         enabled: settings.sync_enabled,
-        key: settings.sync_key.as_deref().and_then(decode_key),
         dir: Some(settings.sync_dir.clone().map(PathBuf::from).unwrap_or_else(default_sync_dir)),
         ..Default::default()
     };
@@ -152,18 +149,6 @@ pub fn detect_icloud_dir() -> Option<PathBuf> {
     ];
 
     candidates.into_iter().find(|p| p.is_dir())
-}
-
-fn decode_key(b64: &str) -> Option<Key> {
-    use base64::engine::general_purpose::STANDARD as B64;
-    use base64::Engine;
-    let bytes = B64.decode(b64).ok()?;
-    if bytes.len() != 32 {
-        return None;
-    }
-    let mut key = [0u8; 32];
-    key.copy_from_slice(&bytes);
-    Some(key)
 }
 
 fn default_device_name() -> String {

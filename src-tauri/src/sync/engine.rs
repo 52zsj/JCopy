@@ -10,7 +10,6 @@ use std::thread;
 use std::time::{Duration, SystemTime};
 use tauri::{AppHandle, Emitter};
 
-use super::crypto;
 use super::protocol::{self, DeviceInfo, Outbox, SyncClip};
 use crate::state::{AppState, PeerStatus};
 use crate::db;
@@ -47,14 +46,13 @@ pub fn sync_once(app: &AppHandle, state: &Arc<AppState>) -> Result<(), String> {
 }
 
 fn tick(app: &AppHandle, state: &Arc<AppState>) -> Result<(), String> {
-    let (enabled, key, dir) = {
+    let (enabled, dir) = {
         let rt = state.sync.lock().map_err(|e| e.to_string())?;
-        (rt.enabled, rt.key, rt.dir.clone())
+        (rt.enabled, rt.dir.clone())
     };
     if !enabled {
         return Ok(());
     }
-    let Some(key) = key else { return Ok(()) };
     let Some(dir) = dir else { return Ok(()) };
     if !dir.is_dir() {
         return Err(format!("同步目录不可用：{}", dir.display()));
@@ -70,14 +68,13 @@ fn tick(app: &AppHandle, state: &Arc<AppState>) -> Result<(), String> {
         platform: protocol::current_platform().to_string(),
     };
 
-    push(state, &key, &root, &device, &settings.image_sync)?;
-    pull(app, state, &key, &root, &settings.device_id)?;
+    push(state, &root, &device, &settings.image_sync)?;
+    pull(app, state, &root, &settings.device_id)?;
     Ok(())
 }
 
 fn push(
     state: &Arc<AppState>,
-    key: &crypto::Key,
     root: &Path,
     device: &DeviceInfo,
     image_mode: &str,
@@ -198,7 +195,7 @@ fn push(
         clips: items,
     };
 
-    let sealed = protocol::seal_outbox(key, &device.id, &outbox).ok_or("发件箱加密失败")?;
+    let sealed = protocol::seal_outbox(&device.id, &outbox).ok_or("发件箱加密失败")?;
     let path = root.join("devices").join(format!("{}.enc", device.id));
     write_atomic(&path, &sealed).map_err(|e| e.to_string())?;
 
@@ -215,7 +212,6 @@ fn push(
 fn pull(
     app: &AppHandle,
     state: &Arc<AppState>,
-    key: &crypto::Key,
     root: &Path,
     own_id: &str,
 ) -> Result<(), String> {
@@ -247,7 +243,7 @@ fn pull(
         let Ok(blob) = fs::read(&path) else { continue };
         // 解不开基本只有一种原因：两台机器的主密钥不一致（各自生成过配对码）。
         // 以前这里静默 continue，界面看不出任何异常——现在记下来，让用户能看见。
-        let Some(outbox) = protocol::open_outbox(key, &peer_id, &blob) else {
+        let Some(outbox) = protocol::open_outbox(&peer_id, &blob) else {
             // 全部记下来供界面预警；但只有"新鲜的"才进错误文案，
             // 十分钟没动过的多半是上次配对的残留，不该每轮都弹红字
             mismatched += 1;
