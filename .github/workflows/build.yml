@@ -7,9 +7,11 @@ on:
     branches: [main]
     tags: ["v*"]
 
+# 不要 cancel-in-progress：新 push 顶掉旧 run 会留下半截日志，
+# 看起来像"又失败了"，实际是被取消
 concurrency:
   group: build-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
