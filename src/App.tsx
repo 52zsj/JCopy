@@ -509,6 +509,21 @@ export default function App() {
 
               <div className="group-title">跨设备同步</div>
 
+              <button
+                className="row"
+                onClick={() => void patchSettings({ syncEnabled: !settings?.syncEnabled })}
+              >
+                <span>
+                  同步到其他设备
+                  <em>
+                    {settings?.syncEnabled
+                      ? "已开启 · 两台设备登录同一个云盘账号即互通"
+                      : "已关闭，只在本机使用"}
+                  </em>
+                </span>
+                <Switch on={Boolean(settings?.syncEnabled)} />
+              </button>
+
               {sync?.peers.map((peer) => (
                 <div className="row static" key={peer.id}>
                   <span>

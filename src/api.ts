@@ -22,7 +22,6 @@ export type Settings = {
   maxBytes: number;
   hotkey: string;
   syncEnabled: boolean;
-  syncKey: string | null;
   syncDir: string | null;
   blacklist: string[];
   /** 外观主题：system / light / dark */
@@ -51,7 +50,6 @@ export type PeerStatus = {
 
 export type PeerFile = {
   id: string;
-  size: number;
   updatedAt: number;
   isSelf: boolean;
   decryptable: boolean;
@@ -68,13 +66,10 @@ export type SyncStatus = {
   dir: string;
   dirExists: boolean;
   isIcloud: boolean;
-  deviceId: string;
   deviceName: string;
   peers: PeerStatus[];
-  lastPushAt: number;
   lastPullAt: number;
   lastError: string | null;
-  /** 主密钥指纹：两台机器一致才可能互相解密 */
   /** 本机发件箱里实际发布了多少条 */
   ownClips: number;
   /** 最近一次发出去：总条数 / 其中图片张数 */
@@ -107,11 +102,9 @@ export const api = {
   setPaused: (paused: boolean) => invoke<boolean>("set_paused", { paused }),
   hidePanel: () => invoke<void>("hide_panel"),
   openAccessibility: () => invoke<void>("open_accessibility_settings"),
-  setPanelMode: (mode: "clips" | "settings") => invoke<void>("set_panel_mode", { mode }),
 
   // deep=false 只读运行时计数，适合每几秒轮询；deep=true 会逐个发件箱解密扫描
   syncStatus: (deep = false) => invoke<SyncStatus>("sync_status", { deep }),
   syncSetDir: (path: string) => invoke<void>("sync_set_dir", { path }),
-  syncSetEnabled: (enabled: boolean) => invoke<void>("sync_set_enabled", { enabled }),
   syncNow: () => invoke<void>("sync_now"),
 };

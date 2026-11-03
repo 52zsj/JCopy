@@ -12,7 +12,6 @@ static LAST_SHOWN_MS: AtomicU64 = AtomicU64::new(0);
 /// 横向卡片条的高度（逻辑像素）：工具栏 + 一行卡片
 const CLIPS_HEIGHT: f64 = 380.0;
 /// 设置页内容多，临时把抽屉拉高
-const SETTINGS_HEIGHT: f64 = 560.0;
 
 fn now_ms() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -51,19 +50,6 @@ pub fn show(app: &AppHandle) {
     let _ = w.set_focus();
     LAST_SHOWN_MS.store(now_ms(), Ordering::Relaxed);
     let _ = app.emit("panel-shown", ());
-}
-
-/// 切换面板高度：剪贴板是扁条，设置页需要更多纵向空间。
-pub fn set_mode(app: &AppHandle, mode: &str) {
-    let Some(w) = app.get_webview_window("panel") else {
-        return;
-    };
-    let height = if mode == "settings" {
-        SETTINGS_HEIGHT
-    } else {
-        CLIPS_HEIGHT
-    };
-    layout_drawer(&w, height);
 }
 
 /// Accessory（无 Dock 图标）模式下，必须显式激活应用，否则窗口收不到键盘输入。

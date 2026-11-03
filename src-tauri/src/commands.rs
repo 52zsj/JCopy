@@ -217,12 +217,6 @@ pub fn probe_report(info: String) {
     let _ = info;
 }
 
-/// 切换抽屉高度：卡片模式是扁条，设置页需要更高。
-#[tauri::command]
-pub fn set_panel_mode(app: AppHandle, mode: String) {
-    crate::ui::set_mode(&app, &mode);
-}
-
 #[tauri::command]
 pub fn open_config_dir(state: State<'_, Arc<AppState>>) {
     #[cfg(target_os = "macos")]
@@ -241,7 +235,6 @@ pub fn open_config_dir(state: State<'_, Arc<AppState>>) {
 pub struct PeerFile {
     /// 设备 id（文件名去掉 .enc）
     pub id: String,
-    pub size: u64,
     pub updated_at: i64,
     /// 是不是本机写的
     pub is_self: bool,
@@ -264,10 +257,8 @@ pub struct SyncStatus {
     pub dir: String,
     pub dir_exists: bool,
     pub is_icloud: bool,
-    pub device_id: String,
     pub device_name: String,
     pub peers: Vec<PeerStatus>,
-    pub last_push_at: i64,
     pub last_pull_at: i64,
     pub last_error: Option<String>,
     /// 同网段发现的设备数（局域网直连可用性）
@@ -320,7 +311,6 @@ pub fn sync_status(
 
     let (
         enabled,
-        last_push_at,
         last_pull_at,
         last_error,
         peers,
@@ -337,7 +327,6 @@ pub fn sync_status(
         peers.sort_by(|a, b| a.name.cmp(&b.name));
         (
             rt.enabled,
-            rt.last_push_at,
             rt.last_pull_at,
             rt.last_error.clone(),
             peers,
@@ -370,7 +359,6 @@ pub fn sync_status(
             };
 
             let meta = entry.metadata().ok();
-            let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
             let updated_at = meta
                 .as_ref()
                 .and_then(|m| m.modified().ok())
@@ -418,7 +406,6 @@ pub fn sync_status(
 
             peer_files.push(PeerFile {
                 id,
-                size,
                 updated_at,
                 is_self,
                 decryptable,
@@ -443,10 +430,8 @@ pub fn sync_status(
         dir: dir.display().to_string(),
         dir_exists: dir.is_dir(),
         is_icloud,
-        device_id: settings.device_id,
         device_name: settings.device_name,
         peers,
-        last_push_at,
         last_pull_at,
         last_error,
         own_clips,
@@ -534,18 +519,6 @@ pub fn sync_set_dir(state: State<'_, Arc<AppState>>, path: String) -> Result<(),
     let mut rt = state.sync.lock().map_err(|e| e.to_string())?;
     rt.dir = Some(dir);
     rt.last_push_hash.clear();
-    Ok(())
-}
-
-#[tauri::command]
-pub fn sync_set_enabled(state: State<'_, Arc<AppState>>, enabled: bool) -> Result<(), String> {
-    {
-        let mut s = state.settings.lock().map_err(|e| e.to_string())?;
-        s.sync_enabled = enabled;
-        save_settings(&state.config_dir, &s);
-    }
-    let mut rt = state.sync.lock().map_err(|e| e.to_string())?;
-    rt.enabled = enabled;
     Ok(())
 }
 

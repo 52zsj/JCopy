@@ -110,33 +110,11 @@ body {
   z-index: 2;
 }
 
-.search-row {
-  height: 52px;
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--hairline);
-}
-
 .icon-search {
   width: 15px;
   height: 15px;
   flex: 0 0 auto;
   color: var(--text-faint);
-}
-
-.search-row input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  font-size: calc(14px * var(--fs));
-  color: var(--text);
-  font-family: inherit;
-  user-select: text;
 }
 
 ::placeholder {
@@ -158,34 +136,6 @@ body {
 .chip.on {
   background: var(--accent);
   color: #fff;
-}
-
-.list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 6px;
-}
-
-.list::-webkit-scrollbar {
-  width: 0;
-}
-
-/* 抽屉是宽而扁的：每行改成横向排列，内容在左、元信息右对齐，
-   宽屏下不浪费横向空间，扫视时时间和来源也对得成一列 */
-.item {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  height: 42px;
-  padding: 0 12px 0 13px;
-  border-radius: 9px;
-  margin-bottom: 1px;
-  transition: background 80ms ease;
-}
-
-.item:hover {
-  background: var(--item-hover);
 }
 
 .item.active {
@@ -231,22 +181,6 @@ body {
 
 .meta .remote {
   color: var(--remote);
-}
-
-.footer {
-  height: 34px;
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 12px 0 14px;
-  border-top: 1px solid var(--hairline);
-  font-size: calc(11px * var(--fs));
-  color: var(--text-dim);
-}
-
-.footer .status.warn {
-  color: var(--danger);
 }
 
 .hint {
@@ -471,31 +405,6 @@ kbd {
   letter-spacing: 0.02em;
 }
 
-.invite-card {
-  margin: 4px 10px 6px;
-  padding: 14px;
-  border-radius: 10px;
-  background: var(--item-active);
-  border: 1px solid var(--accent);
-  text-align: center;
-}
-
-.invite-code {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: calc(26px * var(--fs));
-  font-weight: 500;
-  letter-spacing: 0.24em;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-
-.invite-hint {
-  margin-top: 6px;
-  font-size: calc(11px * var(--fs));
-  color: var(--text-dim);
-  line-height: 1.45;
-}
-
 .join-row {
   display: flex;
   gap: 6px;
@@ -590,10 +499,6 @@ mark {
 .settings-head {
   padding-left: 20px;
   padding-right: 20px;
-}
-
-.list {
-  padding: 8px 10px 12px;
 }
 
 /* ---------- 横向卡片条 ---------- */
@@ -1263,15 +1168,6 @@ mark {
   color: var(--text-faint);
 }
 
-.diag-warn {
-  margin-top: 2px;
-  padding-top: 6px;
-  border-top: 1px solid var(--hairline);
-  color: var(--danger);
-  font-size: calc(11px * var(--fs));
-  line-height: 1.5;
-}
-
 /* 旧配对残留：不报警，只是暗掉 */
 .diag-line.stale .diag-id,
 .diag-line.stale .diag-meta {
@@ -1417,25 +1313,4 @@ mark {
 
 .sync-chip.off i {
   background: var(--text-faint);
-}
-
-/* 配对串按钮：云盘传不动时的备用配对通道 */
-.invite-token {
-  margin-top: 8px;
-  width: 100%;
-}
-
-/* 配对串：等宽显示，方便核对首尾 */
-.invite-token-text {
-  margin: 6px 0 2px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--item-hover);
-  border: 1px solid var(--chip-border);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: calc(11px * var(--fs));
-  color: var(--text);
-  word-break: break-all;
-  line-height: 1.45;
-  user-select: all;
 }

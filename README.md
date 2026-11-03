@@ -1,12 +1,11 @@
 # JCopy
 
-![构建与发布](https://github.com/52zsj/JCopy/actions/workflows/release.yml/badge.svg)
 
 跨平台轻量剪贴板共享工具。让 Mac 与 Windows 之间的复制粘贴，像在同一台机器上一样。
 
 - 需求规格：[docs/01-requirements.md](docs/01-requirements.md)
 - 技术栈：Tauri 2 + Rust 平台壳 + TypeScript/React 界面
-- 当前版本：0.9.9（本机闭环 + 云盘同步 + 全宽卡片条 + 图片同步）
+- 当前版本：0.9.10（本机闭环 + 云盘同步 + 全宽卡片条 + 图片同步）
 
 ## 现在能做什么
 
@@ -60,33 +59,24 @@ JCopy/
 
 ### 不需要配对
 
-0.9.8 起**没有任何配对步骤**：两台设备登录同一个云盘账号、指到同一个目录即可。
-每台只写自己的 `devices/<id>.enc`，只读别人的，不存在互相覆盖。
+**没有任何配对步骤**：两台设备登录同一个云盘账号、指到同一个目录即可。
+每台只写自己的 `devices/<id>.enc`、只读别人的，结构上不会互相覆盖。
 
 发件箱仍然加密（剪贴板里常有密码、token 这类东西，不该明文躺在云盘上），
 但密钥由程序内部固定派生，用户不用做任何事。
 
-> 0.9.7 及更早是「6 位配对码」或「配对串」，那套已彻底移除。
-> 旧版本写的发件箱文件读不了，会标成「旧版本文件」，可以直接删掉。
-
 ### 同步不通怎么查
 
-设置 → 跨设备同步里有一块自检信息，三项按顺序看：
+设置 → 跨设备同步里有一块自检：
 
-1. **配对指纹**：两台机器必须是同一个 8 位值。不一致 = 主密钥不同，永远解不开对方的发件箱
-2. **本机发布 N 条**：`N = 0` 说明发件箱是空的，问题在"没东西可发"，不是网络
-3. **发件箱列表**：标红的那行就是解不开的那份，后面写着原因
-
-**最常见的错误**：在 A 和 B 上**分别**点了「生成配对串」。
-这样两台机器各有一把主密钥，各自都能写出 `.enc`，但谁也解不开对方的——表现就是
-"文件有两份、数据一点不动"。正确做法是一台生成、另一台粘贴同一串。
-
-怀疑密钥不一致时的补救：在 A 重新「生成配对串」，到 B 粘贴重新配对。
-重新配对会换掉主密钥，旧的 `.enc` 从此解不开（本来也解不开），让两台机器各自重写一次即可。
+1. **本机发布 N 条**：`N = 0` 说明发件箱是空的，问题在"没东西可发"
+2. **共享目录图片 N 张**：程序实际放进云盘目录的图片数。
+   拿它和另一台 `JCopy/images` 里的文件数对比，就知道是云盘没传全还是拉取没成功
+3. **发件箱列表**：标红那行就是读不了的那份，后面写着原因
 
 ## 安装
 
-从 `release/0.8.1/` 取 dmg 或 GitHub Releases，拖进「应用程序」。
+从 `release/<版本>/` 取 dmg，拖进「应用程序」。
 
 **首次打开会被 Gatekeeper 拦下** —— 当前包未做 Apple 开发者签名与公证：
 
@@ -157,10 +147,10 @@ Tauri 的 `bundle/nsis`、`bundle/deb` 这些目录是累积的，装过旧版�
 "文件名叫 0.9.2、里面装的还是 0.9.1"，这里直接报错拦下。
 
 **Tauri 不支持跨系统打包**：Windows 要 NSIS/WiX，Linux 要 webkit2gtk 与 dpkg，都无法从 macOS 交叉出包。
-所以在 Mac 上跑 `--win` / `--linux` 会明确提示跳过，而不是打出坏包。要一次拿全三平台，用下面的 CI。
+所以在 Mac 上跑 `--win` / `--linux` 会明确提示跳过，而不是打出坏包。
 
-macOS 的 dmg 由 `scripts/make-dmg.sh` 用 `hdiutil` 直接造，不走 `tauri build --bundles dmg`——
-后者会调 AppleScript 驱动 Finder 摆窗口位置，在没有图形会话（CI / 无头）时报 `-10004` 并整体失败。
+macOS 的 dmg 由 `scripts/package.sh` 用 `hdiutil` 直接造，不走 `tauri build --bundles dmg`——
+后者会调 AppleScript 驱动 Finder 摆窗口位置，在没有图形会话时报 `-10004` 并整体失败。
 
 ### Windows 打包前置条件
 
@@ -193,55 +183,6 @@ $env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
 `scripts/build-all.mjs` 会先探 PATH、再探默认安装位置，探到了会自动补进子进程环境并给出提示；
 两边都没有时直接打印上面的清单后退出，不会抛一堆 node 堆栈。
 
-### 三平台 CI
-
-`.github/workflows/release.yml` 会在三种情况下运行：
-
-| 触发 | 行为 |
-|---|---|
-| 推 main / PR | 三平台编译 + 单测 + 上传产物为 workflow artifact（不发 Release） |
-| 推 `v*` tag | 同上，并创建 GitHub Release、附上三个平台的安装包 |
-| 手动 workflow_dispatch | 同推 main |
-
-矩阵共 4 个任务：
-
-| Runner | 产物 |
-|---|---|
-| `macos-14` | `JCopy-<版本>-arm64.dmg` / `.zip`（原生 Apple Silicon） |
-| `macos-14`（交叉到 x86_64） | `JCopy-<版本>-x64.dmg` / `.zip` |
-| `windows-latest` | `JCopy_<版本>_x64-setup.exe`（NSIS） |
-| `ubuntu-22.04` | `.deb` + `.AppImage` |
-
-macOS 不走 `--target universal-apple-darwin` 那条 lipo 合并路径：两个架构各出一个包，
-失败面更小，产物名也能直接看出架构。
-
-### 发版
-
-```bash
-npm run release:tag -- --dry-run   # 只做检查，不打 tag
-npm run release:tag                # 打 tag 并推送，触发 CI 出包与 Release
-```
-
-脚本会先拦住这几类问题，任一不满足直接退出：
-
-1. 工作区有未提交改动
-2. 版本号不一致——`package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` 三处必须相同
-   （Tauri 的产物版本取自 `tauri.conf.json`，漏改会打出旧版本号）
-3. `CHANGELOG.md` 里没有 `## <当前版本>` 这一节（Release 正文从那里取）
-4. tag 已存在（本地或远端）
-5. 当前不在 `main` 分支
-
-`CHANGELOG.md` 的写法直接决定 Release 长什么样，用 `npm run notes:section` 可以预览：
-
-```markdown
-## 0.8.1
-
-一句话概括这版做了什么。
-
-### 新增
-- ...
-```
-
 ## 快捷键
 
 | 按键 | 行为 |
@@ -270,8 +211,8 @@ src-tauri/
   src/ui.rs          面板定位与显示
   src/tray.rs        菜单栏 / 托盘
   src/sync/
-    crypto.rs        AES-GCM / HKDF / Argon2id 原语（带单测）
-    protocol.rs      发件箱与配对邀请的线格式（带端到端单测）
+    crypto.rs        AES-GCM / HKDF 原语，密钥内部固定派生（带单测）
+    protocol.rs      发件箱的线格式（带端到端单测）
     engine.rs        推送 / 拉取循环
 docs/                需求与设计文档
 ```

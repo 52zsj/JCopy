@@ -75,10 +75,8 @@ pub fn run() {
             commands::open_accessibility_settings,
             commands::open_config_dir,
             commands::probe_report,
-            commands::set_panel_mode,
             commands::sync_status,
             commands::sync_set_dir,
-            commands::sync_set_enabled,
             commands::sync_now,
         ])
         .on_window_event(|window, event| match event {

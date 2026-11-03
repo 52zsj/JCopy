@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.9.10
+
+全量审查：删掉所有"定义了没人用"和"功能删了样式还在"的东西。
+
+### 后端
+
+- **`set_panel_mode`**：前端从未调用过的死命令，连带 `ui::set_mode`、`SETTINGS_HEIGHT` 一起删
+- **`sync_set_enabled`**：同上，前端走 `updateSettings`，这个命令是重复实现
+- `SyncStatus` 里前端不读的 `deviceId`、`lastPushAt`
+- `PeerFile.size`（界面上从来没显示过）
+
+命令数 18 → 16，注册与定义仍严格一一对应。
+
+### 前端
+
+- 类型残留：`Settings.syncKey`（后端早已删除）、`setPanelMode`、`syncSetEnabled`
+- 注释残留：「主密钥指纹：两台机器一致才可能互相解密」
+- **CSS 删掉 15 个规则块共 125 行**：`invite-card` / `invite-code` / `invite-hint` /
+  `invite-token` / `invite-token-text`（配对功能的整套样式）、`stale`（旧残留高亮）、
+  `diag-warn`，以及更早的 `footer` / `item` / `list` / `search-row` / `status` / `warn`。
+  样式表 1441 → 1316 行，产物 19.0 → 17.2 kB
+- **修复**：删配对 UI 时把「同步到其他设备」开关一起删掉了，现在恢复
+
+### 工程
+
+- 删 `scripts/make-dmg.sh`（早被 `package.sh` 取代，README 还写着它）
+- 删 `scripts/dev-shot.sh`（无任何引用）
+- 删 `scripts/release-tag.mjs` + `scripts/changelog-section.mjs` + 对应 npm script
+  （不打 tag、不发 Release）
+- 删 `.github/workflows/release.yml`——不再有任何 CI，也就不需要 `[skip ci]` 了
+- 删 `docs/01-requirements.md`：620 行需求文档，整章在讲「首次配对」「局域网直连」
+  「定向发送」，与现状严重不符
+- 删 12 个未引用图标（Square* / StoreLogo / 64x64 / icon.png），图标目录 808K → 644K
+- 删 Vite 残留的 `vite.config.ts.timestamp-*.mjs`
+
 ## 0.9.9
 
 修重复目录，并把"兼容历史版本"的代码全部删掉。
