@@ -1,0 +1,114 @@
+name: 构建安装包
+
+# 打包放在 CI 做，仓库里只留源码，不提交任何二进制。
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macos-14 是 Apple Silicon；x64 在同一个 runner 上交叉编译，
+          # 比 universal 打包失败面小，产物名也能直接看出架构
+          - target: aarch64-apple-darwin
+            arch: arm64
+          - target: x86_64-apple-darwin
+            arch: x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 准备 Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.target }}
+
+      - run: npm ci
+
+      - name: 打包
+        run: JCOPY_TARGET=${{ matrix.target }} ./scripts/package.sh
+        env:
+          # 本地包不做 Apple 签名与公证
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JCopy-macOS-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            release/*/*.dmg
+            release/*/*.zip
+            release/*/安装说明.txt
+
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: npm ci
+
+      # NSIS 安装器由 tauri-cli 自己下载，runner 上自带 MSVC 与 WebView2
+      - name: 打包
+        run: npm run app:build -- --target x86_64-pc-windows-msvc --bundles nsis
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JCopy-Windows-x64
+          if-no-files-found: error
+          path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+
+  # 三平台都成功时才打一个汇总说明，方便在 Actions 页面直接看到该装哪个
+  summary:
+    name: 汇总
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 写说明
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          {
+            echo "## JCopy $VERSION"
+            echo ""
+            echo "到本次运行的 Artifacts 区下载："
+            echo ""
+            echo "| 系统 | 文件 | 说明 |"
+            echo "|---|---|---|"
+            echo "| macOS Apple Silicon | \`JCopy-macOS-arm64\` | 内含 dmg + zip |"
+            echo "| macOS Intel | \`JCopy-macOS-x64\` | 内含 dmg + zip |"
+            echo "| Windows 10/11 x64 | \`JCopy-Windows-x64\` | NSIS 安装器 setup.exe |"
+            echo ""
+            echo "macOS 首次打开会被 Gatekeeper 拦下（未签名）："
+            echo "右键 JCopy → 打开，或 \`xattr -dr com.apple.quarantine /Applications/JCopy.app\`"
+          } >> "$GITHUB_STEP_SUMMARY"

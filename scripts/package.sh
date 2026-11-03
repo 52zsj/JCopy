@@ -10,7 +10,21 @@ setopt NULL_GLOB 2>/dev/null || true
 cd "$(dirname "$0")/.."
 
 VERSION=$(node -p "require('./package.json').version")
-ARCH=$(uname -m)
+# JCOPY_TARGET 用于交叉/CI 构建（如 x86_64-apple-darwin）；留空则用本机默认
+TARGET="${JCOPY_TARGET:-}"
+if [ -n "$TARGET" ]; then
+  case "$TARGET" in
+    aarch64-*) ARCH="arm64" ;;
+    x86_64-*)  ARCH="x64" ;;
+    *)         ARCH="${TARGET%%-*}" ;;
+  esac
+  BUILD_ARGS="--target $TARGET"
+  OUT_SUFFIX="$TARGET/release"
+else
+  ARCH=$(uname -m)
+  BUILD_ARGS=""
+  OUT_SUFFIX="release"
+fi
 export PATH="$HOME/.cargo/bin:$PATH"
 
 echo "==> 构建 JCopy $VERSION ($ARCH)"
@@ -18,10 +32,10 @@ echo "==> 构建 JCopy $VERSION ($ARCH)"
 if [ "${JCOPY_SKIP_BUILD:-0}" = "1" ]; then
   echo "    (跳过构建，复用现有 .app)"
 else
-  npm run app:build -- --bundles app
+  npm run app:build -- --bundles app $BUILD_ARGS
 fi
 
-APP="src-tauri/target/release/bundle/macos/JCopy.app"
+APP="src-tauri/target/$OUT_SUFFIX/bundle/macos/JCopy.app"
 [ -d "$APP" ] || { echo "找不到 $APP（若用了 --skip-build，先完整构建一次）"; exit 1; }
 
 # 版本号写在三个地方（package.json / tauri.conf.json / Cargo.toml），漏改一个就会出现
@@ -36,7 +50,7 @@ if [ -n "$APP_VERSION" ] && [ "$APP_VERSION" != "$VERSION" ]; then
 fi
 
 # 清掉历史遗留的中间镜像（tauri 内置 dmg 打包器失败会留下 rw.*.dmg，30MB 起步）
-rm -f src-tauri/target/release/bundle/macos/rw.*.dmg 2>/dev/null || true
+rm -f "src-tauri/target/$OUT_SUFFIX/bundle/macos/"rw.*.dmg 2>/dev/null || true
 
 OUT="release/$VERSION"
 mkdir -p "$OUT"
