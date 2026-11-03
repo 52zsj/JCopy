@@ -54,6 +54,10 @@ jobs:
           # 本地包不做 Apple 签名与公证
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
+      - name: 产物清单
+        if: always()
+        run: ls -lhR release 2>/dev/null || echo "release 目录为空——打包步骤没产出文件"
+
       - uses: actions/upload-artifact@v4
         with:
           name: JCopy-macOS-${{ matrix.arch }}
@@ -83,6 +87,10 @@ jobs:
       # NSIS 安装器由 tauri-cli 自己下载，runner 上自带 MSVC 与 WebView2
       - name: 打包
         run: npm run app:build -- --target x86_64-pc-windows-msvc --bundles nsis
+
+      - name: 产物清单
+        if: always()
+        run: ls -lhR src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis 2>$null
 
       - uses: actions/upload-artifact@v4
         with:

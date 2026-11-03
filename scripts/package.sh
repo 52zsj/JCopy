@@ -57,7 +57,9 @@ rm -f "src-tauri/target/$OUT_SUFFIX/bundle/macos/"rw.*.dmg 2>/dev/null || true
 
 OUT="release/$VERSION"
 mkdir -p "$OUT"
-rm -f "$OUT"/JCopy-*.dmg "$OUT"/JCopy-*.zip
+# 只清自己这个架构的产物：同一个版本号下可能同时存在 arm64 与 x64，
+# 用 JCopy-*.dmg 会把另一架构刚打好的包一并删掉
+rm -f "$OUT"/JCopy-"$VERSION"-"$ARCH".dmg "$OUT"/JCopy-"$VERSION"-"$ARCH".zip
 
 echo "==> 生成 dmg"
 STAGE=$(mktemp -d)
