@@ -47,9 +47,6 @@ pub struct SyncRuntime {
     pub waiting_images: usize,
     /// 本机有条目超过同步体积上限（图片 12MB / 文本 256KB），被静默跳过的数量
     pub skipped_oversize: usize,
-    /// 共享目录里有几个发件箱是本机解不开的（含旧配对残留）。
-    /// 大于 0 说明"有设备的数据在这儿，但我们读不了"——通常是密钥不一致
-    pub mismatched_peers: usize,
     pub last_error: Option<String>,
     pub peers: HashMap<String, PeerStatus>,
 }
@@ -87,7 +84,11 @@ pub fn init(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
 
     let sync = SyncRuntime {
         enabled: settings.sync_enabled,
-        dir: Some(settings.sync_dir.clone().map(PathBuf::from).unwrap_or_else(default_sync_dir)),
+        dir: settings
+            .sync_dir
+            .clone()
+            .map(PathBuf::from)
+            .or_else(default_sync_dir),
         ..Default::default()
     };
 
@@ -123,15 +124,11 @@ pub fn save_settings(dir: &PathBuf, settings: &Settings) {
     }
 }
 
-/// 默认同步目录：优先 iCloud Drive，找不到就退到用户主目录下的一个可见文件夹。
-pub fn default_sync_dir() -> PathBuf {
-    if let Some(dir) = detect_icloud_dir() {
-        return dir;
-    }
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join("JCopy")
+/// 默认同步目录：只认系统云盘。
+/// 找不到就返回 None——以前会退到 `~/JCopy` 自己造一个，结果两台设备指向不同位置，
+/// 看起来像同步了，其实各写各的，还会在用户主目录里多出一个文件夹。
+pub fn default_sync_dir() -> Option<PathBuf> {
+    detect_icloud_dir()
 }
 
 pub fn detect_icloud_dir() -> Option<PathBuf> {

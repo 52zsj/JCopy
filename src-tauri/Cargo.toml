@@ -1,6 +1,6 @@
 [package]
 name = "jcopy"
-version = "0.9.8"
+version = "0.9.9"
 description = "跨平台轻量剪贴板共享工具"
 authors = ["jay"]
 edition = "2021"
@@ -46,3 +46,8 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+# objc/cocoa 宏里带 #[cfg(feature = "cargo-clippy")]，Rust 2024 会把未知 cfg 报成警告，
+# 这里显式声明一下，免得 20 多条噪音盖住真正的警告
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("cargo-clippy"))'] }

@@ -60,8 +60,6 @@ export type PeerFile = {
   images: number;
   /** 有图但原图文件还没到云盘 */
   missingImages: number;
-  /** 解不开且久未更新：上一次配对留下的旧文件，可忽略 */
-  stale: boolean;
   error: string | null;
 };
 
@@ -87,8 +85,6 @@ export type SyncStatus = {
   pulledImages: number;
   /** 有图片条目但原图还没落盘，正常为 0 */
   pendingImages: number;
-  /** 共享目录里有几台设备的发件箱本机解不开（密钥不一致） */
-  mismatchedPeers: number;
   /** 对端有图、原图还没传过来，本机也还没有 → 正在等云盘 */
   waitingImages: number;
   /** 本机超过体积上限被跳过的条数 */

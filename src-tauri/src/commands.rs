@@ -254,8 +254,6 @@ pub struct PeerFile {
     /// 图片条目里有几个原图文件在共享目录里找不到——
     /// 大于 0 说明卡在云盘传输，不是配对问题
     pub missing_images: usize,
-    /// 超过 10 分钟没更新且解不开：多半是以前配对留下的旧文件，可以忽略
-    pub stale: bool,
     pub error: Option<String>,
 }
 
@@ -284,8 +282,6 @@ pub struct SyncStatus {
     pub pulled_images: usize,
     /// 有图片条目但原图还没落盘（正常应为 0）
     pub pending_images: usize,
-    /// 共享目录里有几台设备的发件箱本机解不开
-    pub mismatched_peers: usize,
     /// 对端有图、原图还没传过来（本机也还没有）→ 正在等云盘
     pub waiting_images: usize,
     /// 本机有内容超过体积上限被跳过（图片 12MB / 文本 256KB）
@@ -305,7 +301,8 @@ fn current_sync_dir(state: &AppState) -> PathBuf {
         .lock()
         .ok()
         .and_then(|rt| rt.dir.clone())
-        .unwrap_or_else(crate::state::default_sync_dir)
+        .or_else(crate::state::default_sync_dir)
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -332,7 +329,6 @@ pub fn sync_status(
         pulled_clips,
         pulled_images,
         pending_images,
-        mismatched_peers,
         waiting_images,
         skipped_oversize,
     ) = {
@@ -350,7 +346,6 @@ pub fn sync_status(
             rt.pulled_clips,
             rt.pulled_images,
             rt.pending_images,
-            rt.mismatched_peers,
             rt.waiting_images,
             rt.skipped_oversize,
         )
@@ -416,18 +411,9 @@ pub fn sync_status(
                         }
                     }
                     None if is_self => error = Some("本机发件箱解不开（文件可能损坏）".into()),
-                    None => error = Some("旧版本（0.9.7 及更早）写的文件，密钥不同，读不了".into()),
+                    None => error = Some("读不了（文件损坏或来自旧版本）".into()),
                 },
                 Err(err) => error = Some(format!("读取失败：{err}")),
-            }
-
-            // 解不开、又不是自己写的、而且十分钟没动过 → 多半是上一次配对留下的旧文件。
-            // 这类不该再标红吓人，功能上本来就忽略它。
-            let stale = !decryptable
-                && !is_self
-                && protocol::db_now_ms() - updated_at > 10 * 60 * 1000;
-            if stale {
-                error = Some("旧配对残留，可忽略".into());
             }
 
             peer_files.push(PeerFile {
@@ -439,7 +425,6 @@ pub fn sync_status(
                 clips,
                 images,
                 missing_images,
-                stale,
                 error,
             });
         }
@@ -471,7 +456,6 @@ pub fn sync_status(
         pulled_clips,
         pulled_images,
         pending_images,
-        mismatched_peers,
         waiting_images,
         skipped_oversize,
         shared_images: shared_image_count,

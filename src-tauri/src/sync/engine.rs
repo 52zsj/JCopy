@@ -7,7 +7,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 use super::protocol::{self, DeviceInfo, Outbox, SyncClip};
@@ -24,8 +24,6 @@ const MAX_IMAGE_SYNC_BYTES: i64 = 12 * 1024 * 1024;
 const MAX_PEER_FILES: usize = 16;
 /// 共享图片保留天数。iCloud 空间不是无限的，只清自己写的那批
 const SHARED_IMAGE_TTL_DAYS: u64 = 30;
-/// 发件箱多久没更新就算"旧配对残留"（解不开也不再报警）
-const STALE_OUTBOX_SECS: u64 = 10 * 60;
 /// 共享目录清理间隔：十分钟扫一次，不必每轮都扫
 const PRUNE_INTERVAL_MS: i64 = 10 * 60 * 1000;
 
@@ -58,8 +56,10 @@ fn tick(app: &AppHandle, state: &Arc<AppState>) -> Result<(), String> {
         return Err(format!("同步目录不可用：{}", dir.display()));
     }
 
+    // 不在每轮同步里预建目录：云盘目录还没物化时 create_dir_all 相当于"新建"，
+    // 两台设备并发就会让 iCloud 留下 devices 2 / images 2 这类冲突副本。
+    // 只在真正要写文件时按需创建。
     let root = dir.join("JCopy");
-    fs::create_dir_all(root.join("devices")).map_err(|e| e.to_string())?;
 
     let settings = state.settings.lock().map_err(|e| e.to_string())?.clone();
     let device = DeviceInfo {
@@ -85,9 +85,6 @@ fn push(
     };
 
     let images_dir = root.join("images");
-    if image_mode != "off" && !images_dir.is_dir() {
-        fs::create_dir_all(&images_dir).map_err(|e| e.to_string())?;
-    }
 
     // 只发本机产生的条目：从对端同步来的内容不再回传，天然切断回环。
     // 用 c.local 判断而不是比对设备名——改过设备名之后，历史条目的 device 还是旧名字，
@@ -126,6 +123,7 @@ fn push(
                 // 文件名用 deviceId 前缀，清理时只删自己的，不会误伤对端。
                 let name = format!("{}-{}.png", device.id, c.id);
                 let target = images_dir.join(&name);
+                let _ = fs::create_dir_all(&images_dir);
                 if !target.exists() && fs::copy(&c.content, &target).is_err() {
                     // 本地原图已被清理，这一条就不发了
                     missing_image_file += 1;
@@ -196,7 +194,9 @@ fn push(
     };
 
     let sealed = protocol::seal_outbox(&device.id, &outbox).ok_or("发件箱加密失败")?;
-    let path = root.join("devices").join(format!("{}.enc", device.id));
+    let devices_dir = root.join("devices");
+    fs::create_dir_all(&devices_dir).map_err(|e| e.to_string())?;
+    let path = devices_dir.join(format!("{}.enc", device.id));
     write_atomic(&path, &sealed).map_err(|e| e.to_string())?;
 
     let mut rt = state.sync.lock().map_err(|e| e.to_string())?;
@@ -225,7 +225,6 @@ fn pull(
     // 本轮累计（写进 runtime 后按增量累加到总数）
     let mut total_received = 0usize;
     let mut total_images = 0usize;
-    let mut mismatched = 0usize;
     let mut waiting_images = 0usize;
 
     for entry in entries.flatten().take(MAX_PEER_FILES) {
@@ -246,10 +245,7 @@ fn pull(
         let Some(outbox) = protocol::open_outbox(&peer_id, &blob) else {
             // 全部记下来供界面预警；但只有"新鲜的"才进错误文案，
             // 十分钟没动过的多半是上次配对的残留，不该每轮都弹红字
-            mismatched += 1;
-            if !is_stale(&path) {
-                undecryptable.push(peer_id.clone());
-            }
+            undecryptable.push(peer_id.clone());
             continue;
         };
 
@@ -305,7 +301,6 @@ fn pull(
     rt.last_pull_at = protocol::db_now_ms();
     rt.pulled_clips += total_received;
     rt.pulled_images += total_images;
-    rt.mismatched_peers = mismatched;
     rt.waiting_images = waiting_images;
     rt.last_error = if undecryptable.is_empty() {
         None
@@ -438,20 +433,6 @@ fn image_ready(state: &Arc<AppState>, root: &Path, clip: &protocol::SyncClip) ->
         .db
         .lock()
         .map(|conn| db::has_hash(&conn, &clip.hash))
-        .unwrap_or(false)
-}
-
-/// 文件超过十分钟没更新：多半是上一次配对的残留，不再当作"当前配对失败"
-fn is_stale(path: &Path) -> bool {
-    let Ok(meta) = fs::metadata(path) else {
-        return false;
-    };
-    let Ok(modified) = meta.modified() else {
-        return false;
-    };
-    SystemTime::now()
-        .duration_since(modified)
-        .map(|age| age.as_secs() > STALE_OUTBOX_SECS)
         .unwrap_or(false)
 }
 

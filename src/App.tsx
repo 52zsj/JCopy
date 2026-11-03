@@ -600,7 +600,7 @@ export default function App() {
                     <div
                       key={file.id}
                       className={`diag-line${
-                        file.decryptable ? (file.missingImages > 0 ? " pending" : "") : file.stale ? " stale" : " bad"
+                        file.decryptable ? (file.missingImages > 0 ? " pending" : "") : " bad"
                       }`}
                     >
                       <span className="diag-id">{file.isSelf ? "本机" : file.id.slice(0, 8)}</span>
@@ -620,15 +620,6 @@ export default function App() {
                       </span>
                     </div>
                   ))}
-
-                  {(sync.peerFiles ?? []).some(
-                    (f) => !f.isSelf && !f.decryptable && !f.stale,
-                  ) && (
-                    <div className="diag-warn">
-                      有发件箱读不了——多半是旧版本（0.9.7 及更早）写的文件，
-                      新版本不用配对，直接忽略即可；旧文件可以删掉。
-                    </div>
-                  )}
 
                   <div className="diag-note">
                     云盘目录剩余 {sync.dirFreeMb > 1_000_000 ? "未知" : `${sync.dirFreeMb} MB`}
@@ -689,9 +680,6 @@ export default function App() {
                       !sync.enabled
                         ? "跨设备同步未开启 · 点击去开启"
                         : (sync.lastError ??
-                              (sync.mismatchedPeers > 0
-                                ? `共享目录里有 ${sync.mismatchedPeers} 个旧版本（0.9.7 及更早）写的文件读不了 · `
-                                : "") +
                               `发出 ${sync.pushedClips} 条（${sync.pushedImages} 图）· 收到 ${sync.pulledClips} 条（${sync.pulledImages} 图）` +
                                 (sync.pendingImages > 0
                                   ? ` · ${sync.pendingImages} 张原图待传`
