@@ -27,14 +27,14 @@ W = SIZE * SS
 PAD = 100 * SS
 CORNER = 185 * SS
 
-BG_TOP = (58, 112, 250)      # #3A70FA
-BG_BOTTOM = (26, 58, 168)    # #1A3AA8
+BG_TOP = (109, 140, 255)     # #6D8CFF
+BG_BOTTOM = (61, 90, 254)    # #3D5AFE
 
 CARD_W, CARD_H, CARD_R = 400, 470, 58
 CARD_FRONT = (312, 292)       # 左上角；中心正好落在画布中线
-CARD_BACK_OFFSET = (34, -34)  # 后一张向右上错开，露出角，形成"一叠"的观感
+CARD_BACK_OFFSET = (42, -42)  # 后一张向右上错开，露出角，形成"一叠"的观感
 
-LINE_COLOR = (183, 204, 242)
+LINE_COLOR = (197, 213, 255)
 LINE_H, LINE_R = 34, 17
 LINES = [(352, 452, 300), (352, 512, 300), (352, 572, 190)]  # (x, y, 宽)
 
@@ -113,26 +113,27 @@ def build() -> Image.Image:
     gloss.putalpha(Image.composite(gloss.split()[3], Image.new("L", (W, W), 0), box_mask))
     canvas.alpha_composite(gloss)
 
-    # 2. 后一张卡片（半透明）+ 投影
-    back = card((86, 132, 255, 255), CARD_BACK_OFFSET)
-    canvas.alpha_composite(shadow(back, s(18), s(10), 90))
-    canvas.alpha_composite(back)
+    # 2. 卡片组画在独立图层上，最后整体旋转——
+    #    正正方方的两叠纸看着呆板，倾斜 9° 像刚被"甩"出来的，有动感
+    cards = Image.new("RGBA", (W, W), (0, 0, 0, 0))
+    back = card((255, 255, 255, 118), CARD_BACK_OFFSET)
+    cards.alpha_composite(shadow(back, s(18), s(10), 80))
+    cards.alpha_composite(back)
 
-    # 3. 前一张卡片 + 投影
     front = card((255, 255, 255, 255), (0, 0))
-    canvas.alpha_composite(shadow(front, s(16), s(14), 110))
-    canvas.alpha_composite(front)
+    cards.alpha_composite(shadow(front, s(16), s(14), 100))
+    cards.alpha_composite(front)
 
-    # 4. 卡片里的文字线
-    lines = Image.new("RGBA", (W, W), (0, 0, 0, 0))
-    d = ImageDraw.Draw(lines)
+    d = ImageDraw.Draw(cards)
     for lx, ly, lw in LINES:
         d.rounded_rectangle(
             [s(lx), s(ly), s(lx + lw), s(ly + LINE_H)],
             radius=s(LINE_R),
             fill=LINE_COLOR + (255,),
         )
-    canvas.alpha_composite(lines)
+
+    cards = cards.rotate(-9, resample=Image.BICUBIC, center=(W / 2, W / 2))
+    canvas.alpha_composite(cards)
 
     return canvas.resize((SIZE, SIZE), Image.LANCZOS)
 
@@ -170,24 +171,30 @@ def save_ico(master: Image.Image) -> None:
 
 
 def save_tray(master: Image.Image) -> None:
-    """菜单栏图标：macOS 用模板图（纯黑 + alpha），系统按明暗自动染色。
+    """菜单栏图标：**彩色**（蓝底 + 白色剪贴板），不用模板模式。
 
-    菜单栏只有 22pt。这里不能画"叠加两张卡片"——两个实心矩形重叠后几乎填满
-    整张画布，缩到 22pt 就是一块黑方块。必须留足镂空：描边为主，实心只用于
-    小细节（夹子、文字线）。
+    纯黑模板图在深色菜单栏上就是一块黑；改成彩色后，蓝色底块在任何壁纸上
+    都清晰，白色图形在上面也有足够对比。
+
+    22pt 下细节会糊，所以只留最必要的元素：蓝色圆角块 + 白色剪贴板外框 +
+    顶部夹子 + 一条内容线。
     """
-    px = 44  # 22pt @2x
+    px = 88  # 22pt @4x，缩下来边缘更干净
     tray = Image.new("RGBA", (px, px), (0, 0, 0, 0))
     d = ImageDraw.Draw(tray)
-    ink = (0, 0, 0, 255)
-    # 剪贴板主体：只描边，中间留空
-    d.rounded_rectangle([8, 10, 36, 39], radius=4, outline=ink, width=3)
+
+    # 蓝色圆角底块（留 2pt 边距，避免贴边）
+    d.rounded_rectangle([8, 8, 80, 80], radius=20, fill=(61, 90, 254, 255))
+
+    white = (255, 255, 255, 255)
+    # 剪贴板外框
+    d.rounded_rectangle([26, 28, 62, 68], radius=7, outline=white, width=5)
     # 顶部夹子
-    d.rounded_rectangle([17, 5, 27, 12], radius=2, fill=ink)
-    # 两条内容线，一长一短
-    d.rounded_rectangle([14, 20, 30, 23], radius=1, fill=ink)
-    d.rounded_rectangle([14, 28, 25, 31], radius=1, fill=ink)
-    tray.save(OUT / "tray.png")
+    d.rounded_rectangle([36, 19, 52, 31], radius=5, fill=white)
+    # 一条内容线（22pt 下再多就糊了）
+    d.rounded_rectangle([35, 43, 53, 49], radius=3, fill=white)
+    # 输出 44×44（22pt @2x）：给 88px 的话系统还要再缩一次，反而更糊
+    tray.resize((44, 44), Image.LANCZOS).save(OUT / "tray.png")
 
 
 def main() -> None:

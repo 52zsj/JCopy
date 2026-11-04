@@ -48,11 +48,13 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             }
         });
 
-    // 菜单栏用单色模板图标：系统会按浅色/深色自动反色，比彩色应用图标协调得多
+    // 菜单栏用**彩色**图标（蓝底白剪贴板）。
+    // 以前用模板图（纯黑 + alpha 由系统染色），深色菜单栏上就是一块黑，
+    // 用户看到的是一块方形墨团。彩色蓝块在任何壁纸下都清晰。
     const TRAY_ICON: &[u8] = include_bytes!("../icons/tray.png");
     match tauri::image::Image::from_bytes(TRAY_ICON) {
         Ok(icon) => {
-            builder = builder.icon(icon).icon_as_template(true);
+            builder = builder.icon(icon).icon_as_template(false);
         }
         Err(_) => {
             if let Some(icon) = app.default_window_icon() {
