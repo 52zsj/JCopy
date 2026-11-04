@@ -5,7 +5,7 @@
 
 - 需求规格：[docs/01-requirements.md](docs/01-requirements.md)
 - 技术栈：Tauri 2 + Rust 平台壳 + TypeScript/React 界面
-- 当前版本：0.9.10（本机闭环 + 云盘同步 + 全宽卡片条 + 图片同步）
+- 当前版本：0.9.11（本机闭环 + 云盘同步 + 全宽卡片条 + 图片同步）
 
 ## 现在能做什么
 
@@ -202,6 +202,8 @@ $env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
 src/                 前端（React + TS）
   api.ts             invoke 封装与类型契约
   format.ts          时间 / 应用名 / 体积的纯函数
+scripts/
+  make-icon.py       生成图标（png / icns / ico / tray），改配色重跑即可
 src-tauri/
   src/model.rs       Clip 与 Settings
   src/db.rs          SQLite 访问与淘汰策略

@@ -32,6 +32,7 @@ export default function App() {
   // 卡片是 memo 的，不随父组件重渲染；"3 分钟前"要自己走时，否则会停住
   const [now, setNow] = useState(() => Date.now());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [autostart, setAutostart] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   // 卡片的右键菜单：位置 + 作用对象
   const [menu, setMenu] = useState<{ x: number; y: number; clip: ClipView } | null>(null);
@@ -348,6 +349,25 @@ export default function App() {
     await patchSettings({ autoPaste: !settings.autoPaste });
   }, [canPaste, patchSettings, settings]);
 
+  // 开机自启状态以系统为准：用户可能在「系统设置 → 登录项」里手动改过
+  useEffect(() => {
+    if (!settingsOpen) return;
+    void api
+      .autostartEnabled()
+      .then(setAutostart)
+      .catch(() => setAutostart(false));
+  }, [settingsOpen]);
+
+  const toggleAutostart = useCallback(async () => {
+    try {
+      const next = await api.setAutostart(!autostart);
+      setAutostart(next);
+      setToast(next ? "已设为开机启动" : "已取消开机启动");
+    } catch (error) {
+      setToast(typeof error === "string" ? error : "设置失败");
+    }
+  }, [autostart]);
+
   const togglePaused = useCallback(async () => {
     const next = await api.setPaused(!paused);
     setPaused(next);
@@ -468,6 +488,16 @@ export default function App() {
                   <em>{paused ? "当前不会记录任何复制内容" : "正在记录剪贴板变化"}</em>
                 </span>
                 <Switch on={paused} />
+              </button>
+
+              <button className="row" onClick={() => void toggleAutostart()}>
+                <span>
+                  开机启动
+                  <em>
+                    {autostart ? "登录后自动在后台运行" : "登录后不会自动启动"}
+                  </em>
+                </span>
+                <Switch on={autostart} />
               </button>
 
               <div className="row static">

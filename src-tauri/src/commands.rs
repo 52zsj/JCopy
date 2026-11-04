@@ -522,6 +522,26 @@ pub fn sync_set_dir(state: State<'_, Arc<AppState>>, path: String) -> Result<(),
     Ok(())
 }
 
+/// 当前是否已设置开机自启。
+#[tauri::command]
+pub fn autostart_enabled(app: AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+/// 开关开机自启，返回设置后的真实状态（以系统为准，不是我们"以为"的值）。
+#[tauri::command]
+pub fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let al = app.autolaunch();
+    if enabled {
+        al.enable().map_err(|e| e.to_string())?;
+    } else {
+        al.disable().map_err(|e| e.to_string())?;
+    }
+    al.is_enabled().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn sync_now(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let inner = state.inner().clone();

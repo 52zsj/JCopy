@@ -14,6 +14,16 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 
 pub fn run() {
     tauri::Builder::default()
+        // 单实例必须第一个注册：再点一次图标时只是把面板叫出来，而不是开第二个进程。
+        // 两个进程同时跑会各自监听剪贴板、各自写发件箱，还会让云盘出现重复目录。
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            ui::show(app);
+        }))
+        // 开机自启：macOS 走 LaunchAgent（比 AppleScript 稳，也不弹权限框）
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
@@ -78,6 +88,8 @@ pub fn run() {
             commands::sync_status,
             commands::sync_set_dir,
             commands::sync_now,
+            commands::autostart_enabled,
+            commands::set_autostart,
         ])
         .on_window_event(|window, event| match event {
             // 点面板外任意位置即收起，这是剪贴板工具的标配行为

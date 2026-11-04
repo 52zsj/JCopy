@@ -1,6 +1,6 @@
 [package]
 name = "jcopy"
-version = "0.9.10"
+version = "0.9.11"
 description = "跨平台轻量剪贴板共享工具"
 authors = ["jay"]
 edition = "2021"
@@ -16,6 +16,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "macos-private-api", "image-png", "protocol-asset"] }
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
