@@ -170,13 +170,23 @@ def save_ico(master: Image.Image) -> None:
 
 
 def save_tray(master: Image.Image) -> None:
-    """菜单栏图标：macOS 用模板图（纯黑 + alpha），系统自己按明暗染色。"""
+    """菜单栏图标：macOS 用模板图（纯黑 + alpha），系统按明暗自动染色。
+
+    菜单栏只有 22pt。这里不能画"叠加两张卡片"——两个实心矩形重叠后几乎填满
+    整张画布，缩到 22pt 就是一块黑方块。必须留足镂空：描边为主，实心只用于
+    小细节（夹子、文字线）。
+    """
     px = 44  # 22pt @2x
     tray = Image.new("RGBA", (px, px), (0, 0, 0, 0))
     d = ImageDraw.Draw(tray)
-    # 简化成"两张叠加的卡片"的轮廓，小尺寸下也认得出
-    d.rounded_rectangle([3, 6, 27, 39], radius=4, outline=(0, 0, 0, 255), width=2)
-    d.rounded_rectangle([10, 2, 34, 33], radius=4, fill=(0, 0, 0, 255))
+    ink = (0, 0, 0, 255)
+    # 剪贴板主体：只描边，中间留空
+    d.rounded_rectangle([8, 10, 36, 39], radius=4, outline=ink, width=3)
+    # 顶部夹子
+    d.rounded_rectangle([17, 5, 27, 12], radius=2, fill=ink)
+    # 两条内容线，一长一短
+    d.rounded_rectangle([14, 20, 30, 23], radius=1, fill=ink)
+    d.rounded_rectangle([14, 28, 25, 31], radius=1, fill=ink)
     tray.save(OUT / "tray.png")
 
 
