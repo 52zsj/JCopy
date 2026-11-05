@@ -350,6 +350,16 @@ kbd {
   color: var(--text-dim);
 }
 
+/* 点了第一次、等第二次确认：底色标出来，让"再点一下就真删了"这件事有存在感 */
+.row.danger.armed {
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+}
+
+.row.danger.armed em {
+  color: var(--danger);
+  opacity: 0.8;
+}
+
 .switch {
   width: 34px;
   height: 20px;

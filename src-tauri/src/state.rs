@@ -57,6 +57,8 @@ pub struct AppState {
     pub paused: AtomicBool,
     /// 由 JCopy 自己写回剪贴板的内容，监听线程需跳过，避免自我回环。
     pub ignore_hash: Mutex<Option<String>>,
+    /// 唤出面板前的那个应用（bundle id），粘贴前要把前台还给它
+    pub return_app: Mutex<Option<String>>,
     pub config_dir: PathBuf,
     /// 图片条目落盘的位置（原图 + .t.png 缩略图）
     pub images_dir: PathBuf,
@@ -97,6 +99,7 @@ pub fn init(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         settings: Mutex::new(settings),
         paused: AtomicBool::new(false),
         ignore_hash: Mutex::new(None),
+        return_app: Mutex::new(None),
         config_dir,
         images_dir,
         sync: Mutex::new(sync),

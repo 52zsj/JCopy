@@ -34,6 +34,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [autostart, setAutostart] = useState(false);
   const [info, setInfo] = useState<AppInfo | null>(null);
+  // 清空历史不可撤销，点第一次只进入待确认状态
+  const [confirmClear, setConfirmClear] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   // 卡片的右键菜单：位置 + 作用对象
   const [menu, setMenu] = useState<{ x: number; y: number; clip: ClipView } | null>(null);
@@ -482,7 +484,14 @@ export default function App() {
               <button className="row" onClick={() => void toggleAutoPaste()}>
                 <span>
                   自动粘贴
-                  <em>{canPaste ? "选中后直接送入前台应用" : "需授予系统辅助功能权限"}</em>
+                  <em>
+                    {/* 授权和开关是两件事：很多人以为给了辅助功能权限就等于开了自动粘贴 */}
+                    {!canPaste
+                      ? "需授予系统辅助功能权限，点一下去授权"
+                      : settings?.autoPaste
+                        ? "选中后直接送入前台应用"
+                        : "辅助功能已授权 · 点一下开启"}
+                  </em>
                 </span>
                 <Switch on={settings?.autoPaste ?? false} />
               </button>
@@ -529,16 +538,26 @@ export default function App() {
               </div>
 
               <button
-                className="row danger"
+                className={`row danger${confirmClear ? " armed" : ""}`}
                 onClick={async () => {
+                  if (!confirmClear) {
+                    setConfirmClear(true);
+                    setToast("再点一次确认清空");
+                    // 3 秒内没再点就自动撤销，避免一直停在"待确认"
+                    window.setTimeout(() => setConfirmClear(false), 3000);
+                    return;
+                  }
+                  setConfirmClear(false);
                   await api.clearAll();
                   setClips([]);
                   setToast("已清空本机历史");
                 }}
               >
                 <span>
-                  清空历史
-                  <em>仅清除本机，不影响其他设备</em>
+                  {confirmClear ? "确定清空？" : "清空历史"}
+                  <em>
+                    {confirmClear ? "再点一次，清空后无法恢复" : "仅清除本机，不影响其他设备"}
+                  </em>
                 </span>
               </button>
 

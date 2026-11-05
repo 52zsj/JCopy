@@ -4,7 +4,10 @@
 #![allow(deprecated)]
 
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewWindow};
+
+use crate::state::AppState;
 
 /// 最近一次显示面板的时间戳，用于忽略"刚显示就失焦"的假事件
 static LAST_SHOWN_MS: AtomicU64 = AtomicU64::new(0);
@@ -29,6 +32,9 @@ pub fn toggle(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("panel") {
         if w.is_visible().unwrap_or(false) {
             let _ = w.hide();
+            // 收起时同样要把前台交出去，否则用户按 Esc 关掉面板后，
+            // 键盘输入还落在我们（已隐藏）的窗口上，原应用收不到
+            hide_app();
         } else {
             show(app);
         }
@@ -40,16 +46,55 @@ pub fn show(app: &AppHandle) {
         eprintln!("[jcopy] 找不到 panel 窗口");
         return;
     };
+    // 先记住"是谁唤出的面板"，粘贴完要把前台还回去。
+    // 必须在 activate_app() 之前取——一旦我们成了前台，这里读到的就是自己。
+    #[cfg(target_os = "macos")]
+    if let Some(state) = app.try_state::<Arc<AppState>>() {
+        if let Some(bid) = crate::platform::frontmost_app() {
+            if let Ok(mut slot) = state.return_app.lock() {
+                *slot = Some(bid);
+            }
+        }
+    }
+
     layout_drawer(&w, CLIPS_HEIGHT);
     // 隐藏状态下移动窗口时，WindowServer 要到下一帧才真正提交位置。
     // 不等这一帧就 show，会在旧屏幕闪一下再跳过去——多屏时尤其明显。
     std::thread::sleep(std::time::Duration::from_millis(24));
+    #[cfg(target_os = "macos")]
+    unhide_app();
     let _ = w.show();
     #[cfg(target_os = "macos")]
     activate_app();
     let _ = w.set_focus();
     LAST_SHOWN_MS.store(now_ms(), Ordering::Relaxed);
     let _ = app.emit("panel-shown", ());
+}
+
+/// 隐藏整个 app 并把前台交出去。
+///
+/// 只 hide() 窗口 + deactivate() 在 macOS 14 上不够：`activateWithOptions:` 的
+/// `NSApplicationActivateIgnoringOtherApps` 已被系统忽略，后台应用无法把前台
+/// "推"给别的应用。`NSApp hide:` 是让系统自己决定下一个前台，反而有效。
+pub fn hide_app() {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        use cocoa::base::id;
+        use objc::{class, msg_send, sel, sel_impl};
+        let ns_app: id = msg_send![class!(NSApplication), sharedApplication];
+        let _: () = msg_send![ns_app, hide: cocoa::base::nil];
+    }
+}
+
+/// hide_app 之后重新显示前必须先 unhide，否则窗口 show 出来是"隐藏 app"状态。
+#[cfg(target_os = "macos")]
+fn unhide_app() {
+    unsafe {
+        use cocoa::base::id;
+        use objc::{class, msg_send, sel, sel_impl};
+        let ns_app: id = msg_send![class!(NSApplication), sharedApplication];
+        let _: () = msg_send![ns_app, unhide: cocoa::base::nil];
+    }
 }
 
 /// Accessory（无 Dock 图标）模式下，必须显式激活应用，否则窗口收不到键盘输入。

@@ -9,12 +9,10 @@ use crate::state::AppState;
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "显示面板", true, None::<&str>)?;
     let pause = MenuItem::with_id(app, "pause", "暂停监听", true, None::<&str>)?;
-    let clear = MenuItem::with_id(app, "clear", "清空历史…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出 JCopy", true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
-    let sep2 = PredefinedMenuItem::separator(app)?;
 
-    let menu = Menu::with_items(app, &[&show, &pause, &sep1, &clear, &sep2, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &pause, &sep1, &quit])?;
 
     let mut builder = TrayIconBuilder::with_id("jcopy")
         .tooltip("JCopy")
@@ -26,13 +24,6 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
                 let state = app.state::<Arc<AppState>>();
                 let next = !state.paused.load(Ordering::Relaxed);
                 state.paused.store(next, Ordering::Relaxed);
-            }
-            "clear" => {
-                let state = app.state::<Arc<AppState>>();
-                {
-                    let conn = state.db.lock().unwrap();
-                    let _ = crate::db::clear(&conn);
-                }
             }
             "quit" => std::process::exit(0),
             _ => {}

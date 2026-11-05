@@ -39,6 +39,38 @@ pub fn frontmost_app() -> Option<String> {
     None
 }
 
+/// 把前台还给指定 bundle id 的应用。找不到 / 已退出时返回 false。
+#[cfg(target_os = "macos")]
+pub fn activate_bundle(bundle_id: &str) -> bool {
+    use cocoa::base::{id, nil};
+    use cocoa::foundation::NSString;
+    use objc::{class, msg_send, sel, sel_impl};
+
+    unsafe {
+        let bid = NSString::alloc(nil).init_str(bundle_id);
+        let apps: id = msg_send![class!(NSRunningApplication), runningApplicationsWithBundleIdentifier: bid];
+        if apps == nil {
+            return false;
+        }
+        let count: usize = msg_send![apps, count];
+        if count == 0 {
+            return false;
+        }
+        let app: id = msg_send![apps, objectAtIndex: 0usize];
+        if app == nil {
+            return false;
+        }
+        // NSApplicationActivateIgnoringOtherApps = 1 << 1
+        let ok: bool = msg_send![app, activateWithOptions: 2u64];
+        ok
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn activate_bundle(_bundle_id: &str) -> bool {
+    false
+}
+
 #[cfg(target_os = "macos")]
 use mac_paste as paste_impl;
 

@@ -57,13 +57,19 @@ pub fn list_clips(state: State<'_, Arc<AppState>>) -> Result<Vec<ClipView>, Stri
 /// 把选中条目写回剪贴板；autoPaste 开启时同时向原应用注入粘贴快捷键。
 #[tauri::command]
 pub fn copy_clip(app: AppHandle, state: State<'_, Arc<AppState>>, id: String) -> Result<(), String> {
+    paste_clip(&app, state.inner(), &id)
+}
+
+/// 写剪贴板 → 收起面板 → 让出前台 → 合成 ⌘V。
+/// 抽出来是为了让自测能复用同一条路径，命令本身只负责参数转换。
+pub fn paste_clip(app: &AppHandle, state: &Arc<AppState>, id: &str) -> Result<(), String> {
     let auto_paste = {
         state.settings.lock().map_err(|e| e.to_string())?.auto_paste
     };
 
     let clip = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
-        db::get(&conn, &id)
+        db::get(&conn, id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "该条目已不存在".to_string())?
     };
@@ -94,7 +100,7 @@ pub fn copy_clip(app: AppHandle, state: State<'_, Arc<AppState>>, id: String) ->
 
     {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
-        let _ = db::touch_used(&conn, &id);
+        let _ = db::touch_used(&conn, id);
     }
 
     if let Some(w) = app.get_webview_window("panel") {
@@ -102,9 +108,32 @@ pub fn copy_clip(app: AppHandle, state: State<'_, Arc<AppState>>, id: String) ->
     }
 
     if auto_paste {
-        // 给窗口隐藏与焦点归还原应用留出时间
-        std::thread::sleep(Duration::from_millis(130));
-        platform::paste()?;
+        // 隐藏窗口还不够：active app 仍是我们时，合成的 ⌘V 会送进自己的窗口。
+        // 先把前台还给唤出面板的那个应用，再发按键。
+        crate::ui::hide_app();
+        let target = state
+            .return_app
+            .lock()
+            .ok()
+            .and_then(|slot| slot.clone());
+        if let Some(bid) = target {
+            // hide 之后系统已把前台交给下一个应用（通常就是它），
+            // 这里再点名激活一次，处理"上一个应用已退出"的情况
+            crate::platform::activate_bundle(&bid);
+            // 等前台**真的**切过去再发按键：窗口 hide、应用切换都要走一轮
+            // WindowServer，固定 sleep 在外接屏 / 多屏下经常不够，早发就是发给空气
+            for _ in 0..12 {
+                if crate::platform::frontmost_app().as_deref() == Some(bid.as_str()) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(25));
+            }
+        } else {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        // 写剪贴板已经成功了。这里失败只是"按键没发出去"，
+        // 明确告诉用户内容已经在剪贴板里，手动 ⌘V 一样能用
+        platform::paste().map_err(|e| format!("{e}；内容已复制到剪贴板，可手动粘贴"))?;
     }
     Ok(())
 }
