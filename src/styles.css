@@ -323,12 +323,23 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  /* 不加这条，内部长路径不会省略，会把面板顶宽 */
+  min-width: 0;
 }
 
 .row em {
   font-style: normal;
   font-size: calc(11px * var(--fs));
   color: var(--text-dim);
+}
+
+/* 「关于」里的路径与地址：等宽 + 单行省略，长路径不撑破面板 */
+.row em.path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: calc(10.5px * var(--fs));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .row.danger {

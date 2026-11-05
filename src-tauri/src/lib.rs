@@ -88,6 +88,7 @@ pub fn run() {
             commands::sync_status,
             commands::sync_set_dir,
             commands::sync_now,
+            commands::app_info,
             commands::autostart_enabled,
             commands::set_autostart,
         ])

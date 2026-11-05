@@ -522,6 +522,50 @@ pub fn sync_set_dir(state: State<'_, Arc<AppState>>, path: String) -> Result<(),
     Ok(())
 }
 
+/// 「关于」页要展示的信息。版本取 Cargo 的，和 package.json / tauri.conf.json 同步升。
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfo {
+    pub version: String,
+    pub platform: String,
+    pub arch: String,
+    pub tauri: String,
+    pub config_dir: String,
+    pub sync_dir: String,
+}
+
+#[tauri::command]
+pub fn app_info(state: State<'_, Arc<AppState>>) -> Result<AppInfo, String> {
+    let platform = if cfg!(target_os = "macos") {
+        "macOS"
+    } else if cfg!(target_os = "windows") {
+        "Windows"
+    } else {
+        "Linux"
+    };
+    // Rust 的 ARCH 是 aarch64 / x86_64，界面上写 arm64 / x64 更好认
+    let arch = match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        "x86_64" => "x64",
+        other => other,
+    };
+    let sync_dir = state
+        .sync
+        .lock()
+        .ok()
+        .and_then(|rt| rt.dir.clone())
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    Ok(AppInfo {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        platform: platform.to_string(),
+        arch: arch.to_string(),
+        tauri: tauri::VERSION.to_string(),
+        config_dir: state.config_dir.display().to_string(),
+        sync_dir,
+    })
+}
+
 /// 当前是否已设置开机自启。
 #[tauri::command]
 pub fn autostart_enabled(app: AppHandle) -> Result<bool, String> {

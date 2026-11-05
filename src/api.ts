@@ -14,6 +14,16 @@ export type ClipView = {
   dims: string | null;
 };
 
+/** 「关于」页要展示的运行信息 */
+export type AppInfo = {
+  version: string;
+  platform: string;
+  arch: string;
+  tauri: string;
+  configDir: string;
+  syncDir: string;
+};
+
 export type Settings = {
   deviceId: string;
   deviceName: string;
@@ -107,6 +117,8 @@ export const api = {
   syncStatus: (deep = false) => invoke<SyncStatus>("sync_status", { deep }),
   syncSetDir: (path: string) => invoke<void>("sync_set_dir", { path }),
   syncNow: () => invoke<void>("sync_now"),
+  appInfo: () => invoke<AppInfo>("app_info"),
+  openConfigDir: () => invoke<void>("open_config_dir"),
   autostartEnabled: () => invoke<boolean>("autostart_enabled"),
   setAutostart: (enabled: boolean) => invoke<boolean>("set_autostart", { enabled }),
 };

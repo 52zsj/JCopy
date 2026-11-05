@@ -11,7 +11,7 @@ import {
 } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { api, type ClipView, type Settings, type SyncStatus } from "./api";
+import { api, type AppInfo, type ClipView, type Settings, type SyncStatus } from "./api";
 import {
   appLabel,
   detectKind,
@@ -33,6 +33,7 @@ export default function App() {
   const [now, setNow] = useState(() => Date.now());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [autostart, setAutostart] = useState(false);
+  const [info, setInfo] = useState<AppInfo | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   // 卡片的右键菜单：位置 + 作用对象
   const [menu, setMenu] = useState<{ x: number; y: number; clip: ClipView } | null>(null);
@@ -356,6 +357,10 @@ export default function App() {
       .autostartEnabled()
       .then(setAutostart)
       .catch(() => setAutostart(false));
+    void api
+      .appInfo()
+      .then(setInfo)
+      .catch(() => setInfo(null));
   }, [settingsOpen]);
 
   const toggleAutostart = useCallback(async () => {
@@ -695,6 +700,39 @@ export default function App() {
                   <em>{canPaste ? "辅助功能已授权" : "尚未授权"}</em>
                 </span>
               </button>
+
+              <div className="group-title">关于</div>
+
+              <div className="row static">
+                <span>
+                  JCopy {info?.version ?? ""}
+                  <em>Mac 与 Windows 之间复制粘贴，像在同一台机器上</em>
+                </span>
+              </div>
+
+              <div className="row static">
+                <span>
+                  运行环境
+                  <em>
+                    {info ? `${info.platform} · ${info.arch} · Tauri ${info.tauri}` : "读取中…"}
+                  </em>
+                </span>
+              </div>
+
+              <button className="row" onClick={() => void api.openConfigDir()}>
+                <span>
+                  数据目录
+                  <em className="path">{info?.configDir ?? "—"}</em>
+                </span>
+                <span className="chev">打开</span>
+              </button>
+
+              <div className="row static">
+                <span>
+                  开源地址
+                  <em className="path">github.com/52zsj/JCopy</em>
+                </span>
+              </div>
             </div>
           </div>
           </div>

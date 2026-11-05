@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.9.14
+
+设置页加了「关于」。
+
+### 关于
+
+| 项 | 内容 |
+|---|---|
+| 名称 | JCopy <版本> + 一句话简介 |
+| 运行环境 | 平台 · 架构 · Tauri 版本 |
+| 数据目录 | 真实路径，点一下在文件管理器里打开 |
+| 开源地址 | github.com/52zsj/JCopy |
+
+版本号取自 `CARGO_PKG_VERSION`，和 `package.json` / `tauri.conf.json` 同步升，
+不会出现「界面写着 A、安装包是 B」。
+
+路径用等宽字体且单行省略——`~/Library/Application Support/com.jcopy.desktop`
+这类长路径不会把面板顶宽（顺手给 `.row > span:first-child` 补了 `min-width: 0`，
+不补的话 flex 子项不会收缩，省略号根本不生效）。
+
+### 顺带修掉一处死代码
+
+`open_config_dir` 这个命令后端一直注册着，但前端从没封装过——等于没人能调。
+这次「关于」要用，一并补上 `api.openConfigDir()`。
+
 ## 0.9.13
 
 图标整体换风格：不再用黑色，改成彩色。
