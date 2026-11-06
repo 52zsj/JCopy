@@ -36,6 +36,13 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
+            // 启动即报告一次真实授权状态，排查"设置里勾着、程序说没授权"时用
+            eprintln!(
+                "[jcopy] 辅助功能判定={} 程序路径={:?}",
+                platform::accessible(),
+                std::env::current_exe().ok()
+            );
+
             let state = Arc::new(state::init(&handle)?);
             app.manage(state.clone());
 
@@ -88,6 +95,7 @@ pub fn run() {
             commands::sync_status,
             commands::sync_set_dir,
             commands::sync_now,
+            commands::can_paste,
             commands::app_info,
             commands::autostart_enabled,
             commands::set_autostart,

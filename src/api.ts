@@ -117,6 +117,7 @@ export const api = {
   syncStatus: (deep = false) => invoke<SyncStatus>("sync_status", { deep }),
   syncSetDir: (path: string) => invoke<void>("sync_set_dir", { path }),
   syncNow: () => invoke<void>("sync_now"),
+  canPaste: () => invoke<boolean>("can_paste"),
   appInfo: () => invoke<AppInfo>("app_info"),
   openConfigDir: () => invoke<void>("open_config_dir"),
   autostartEnabled: () => invoke<boolean>("autostart_enabled"),

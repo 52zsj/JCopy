@@ -363,6 +363,11 @@ export default function App() {
       .appInfo()
       .then(setInfo)
       .catch(() => setInfo(null));
+    // 用户可能刚在系统设置里勾完授权，回到这里要能看到最新状态
+    void api
+      .canPaste()
+      .then(setCanPaste)
+      .catch(() => {});
   }, [settingsOpen]);
 
   const toggleAutostart = useCallback(async () => {

@@ -551,6 +551,14 @@ pub fn sync_set_dir(state: State<'_, Arc<AppState>>, path: String) -> Result<(),
     Ok(())
 }
 
+/// 当前是否已获「辅助功能」授权。
+/// 单独给一个轻量命令：用户在系统设置里勾选后，界面能立刻刷新，
+/// 不用重启应用（AXIsProcessTrusted 的结果我们只在启动时读一次是不够的）。
+#[tauri::command]
+pub fn can_paste() -> bool {
+    platform::accessible()
+}
+
 /// 「关于」页要展示的信息。版本取 Cargo 的，和 package.json / tauri.conf.json 同步升。
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
