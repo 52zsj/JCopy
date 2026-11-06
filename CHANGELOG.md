@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.9.16
+
+修「辅助功能明明勾着，应用却一直要求授权」。
+
+### 根因：签名身份每次构建都在变
+
+查签名就能看出来：
+
+```
+$ codesign -dv --verbose=2 /Applications/JCopy.app
+Identifier=jcopy-5b35e003e9f1c98b        ← 不是 com.jcopy.desktop
+$ codesign -d -r-
+designated => cdhash H"7bc4be34..."      ← 绑死在 cdhash 上
+```
+
+两层问题叠在一起：
+
+1. Tauri 的 ad-hoc 签名标识是 `<名字>-<随机 hash>`，每构建一次就换一个
+2. 默认的 designated requirement 直接写死 cdhash，也是每次构建都变
+
+macOS 的辅助功能授权就记在这个签名要求上。标识一变，系统把新版本当成**另一个程序**，
+于是"系统设置里勾着、应用里却说没授权"——而且每装一版都要重勾一次。
+
+### 修法
+
+打包时显式重签，把标识和签名要求都锚到 bundle id：
+
+```sh
+codesign --force --deep --sign - \
+  --identifier com.jcopy.desktop \
+  --requirements '=designated => identifier "com.jcopy.desktop"' \
+  JCopy.app
+```
+
+改完签名要求变成 `designated => identifier "com.jcopy.desktop"`（不再是 cdhash），
+以后版本更新授权能保持。
+
+### 升级后需要重新授权一次
+
+旧记录绑在旧 cdhash 上，已经失效，我这边执行了
+`tccutil reset Accessibility com.jcopy.desktop` 清掉。所以装完 0.9.16 后：
+
+设置 → 自动粘贴 → 点一下 → 在系统设置里勾上 JCopy
+
+**这是最后一次**，之后升级不用再勾。
+
 ## 0.9.15
 
 修自动粘贴：辅助功能明明已授权，选中卡片后却什么也没发生。

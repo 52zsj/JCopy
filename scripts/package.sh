@@ -52,6 +52,23 @@ if [ -n "$APP_VERSION" ] && [ "$APP_VERSION" != "$VERSION" ]; then
   exit 1
 fi
 
+# 重新签名，让「辅助功能」授权能跨版本保持。
+#
+# 坑有两层：
+#   1. tauri 的 ad-hoc 签名标识是 <name>-<随机 hash>（如 jcopy-5b35e003e9f1c98b），
+#      每构建一次变一次；
+#   2. 默认的 designated requirement 直接写死 cdhash（designated => cdhash H"..."），
+#      同样每次构建都变。
+# TCC 的辅助功能授权绑定在这个签名要求上，所以每装一版就变成"设置里勾着、
+# 应用里却说没授权"。这里把标识和签名要求都锚到 bundle id 上。
+echo "==> 签名（固定 identifier，要求按 identifier 判定）"
+codesign --force --deep --sign - \
+  --identifier com.jcopy.desktop \
+  --requirements '=designated => identifier "com.jcopy.desktop"' \
+  "$APP"
+codesign -dv --verbose=2 "$APP" 2>&1 | grep -E "^Identifier|^Signature=" | sed 's/^/    /'
+codesign -d -r- "$APP" 2>&1 | tail -1 | sed 's/^/    /'
+
 # 清掉历史遗留的中间镜像（tauri 内置 dmg 打包器失败会留下 rw.*.dmg，30MB 起步）
 rm -f "src-tauri/target/$OUT_SUFFIX/bundle/macos/"rw.*.dmg 2>/dev/null || true
 
