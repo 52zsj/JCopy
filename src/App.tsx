@@ -36,6 +36,21 @@ export default function App() {
   const [info, setInfo] = useState<AppInfo | null>(null);
   // 清空历史不可撤销，点第一次只进入待确认状态
   const [confirmClear, setConfirmClear] = useState(false);
+
+  // 把卡片条滚回最左，并顶住浏览器的滚动锚定（它会在内容重排后把位置"恢复"回去）
+  const resetRailScroll = useCallback(() => {
+    const el = railRef.current;
+    if (!el) return;
+    const apply = () => {
+      el.scrollLeft = 0;
+      el.scrollTop = 0;
+    };
+    apply();
+    requestAnimationFrame(() => {
+      apply();
+      requestAnimationFrame(apply);
+    });
+  }, []);
   const [toast, setToast] = useState<string | null>(null);
   // 卡片的右键菜单：位置 + 作用对象
   const [menu, setMenu] = useState<{ x: number; y: number; clip: ClipView } | null>(null);
@@ -85,9 +100,11 @@ export default function App() {
         setActive(0);
         setSettingsOpen(false);
         setToast(null);
-        // active 本来就是 0 时 scrollIntoView 不会触发，滚动条会停在上一次的位置
-        // （拉到最右后重开，卡片就全在屏幕外了），这里显式归零
-        if (railRef.current) railRef.current.scrollLeft = 0;
+        // 卡片条回到最左。
+        // 注意这里要连做三帧：面板刚 show 时容器尺寸还没稳定，浏览器又会按
+        // "滚动锚定"把 scrollLeft 恢复到重排前的位置——只设一次会被它改回去，
+        // 表现就是"拉到最右后重开，卡片全在屏幕外、右边一大片空白"。
+        resetRailScroll();
         void api.syncStatus().then(setSync).catch(() => {});
         requestAnimationFrame(() => inputRef.current?.focus());
       });

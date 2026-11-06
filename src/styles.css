@@ -639,6 +639,10 @@ mark {
   overflow-x: auto;
   overflow-y: hidden;
   padding: 12px 14px;
+  /* 关掉滚动锚定：面板隐藏再显示时内容会重排，浏览器会按"保持视口内容不动"
+     把 scrollLeft 恢复成重排前的值，于是卡片条停在上次的位置、右侧出现空白。
+     这里禁用锚定，配合 show 时的显式归零。 */
+  overflow-anchor: none;
 }
 
 .rail::-webkit-scrollbar {
