@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.9.19
+
+彻底修掉「横向滚动后关闭再打开，卡片只剩几张 / 整片空白」。
+
+### 0.9.18 为什么没修好
+
+上一版的做法是「把 scrollLeft 设回 0」，还加了 `overflow-anchor: none`。两个都不成立：
+
+- **`overflow-anchor` 是 Chrome 的特性，Safari/WKWebView 根本不支持**——
+  而 Tauri 用的正是 WKWebView，那条 CSS 等于没写
+- 只靠"设零"也不行：面板刚 show 时容器尺寸未稳定，内容（尤其是图片卡片）
+  随后异步加载还会触发重排，滚动位置会被保留或重新落到越界处
+
+### 这次的修法：重建 DOM
+
+给卡片条一个递增的 `key`，每次面板打开就换：
+
+```tsx
+const [railEpoch, setRailEpoch] = useState(0);
+// panel-shown 时 setRailEpoch(n => n + 1)
+<div className="rail" key={railEpoch} ref={railRef}>
+```
+
+`key` 变了，React 会卸载旧节点、挂载全新节点——**新节点的 scrollLeft 必然是 0**，
+没有任何"恢复"或"重排"能把它改回去。这是确定性的，不依赖时序。
+
+原来的 `resetRailScroll()`（三帧归零）保留作双保险。
+
 ## 0.9.18
 
 修「横向滚到右边 → 关闭 → 重开，卡片全跑到左边、右边一片空白」。

@@ -36,6 +36,10 @@ export default function App() {
   const [info, setInfo] = useState<AppInfo | null>(null);
   // 清空历史不可撤销，点第一次只进入待确认状态
   const [confirmClear, setConfirmClear] = useState(false);
+  // 每打开一次面板就换一个 key，强制重建卡片条。
+  // WebKit（Tauri 用的就是它）不支持 `overflow-anchor`，而 scrollLeft 在面板隐藏、
+  // 内容重排之后会被保留／被恢复，单靠"设成 0"不可靠——重建 DOM 是唯一确定的做法。
+  const [railEpoch, setRailEpoch] = useState(0);
 
   // 把卡片条滚回最左，并顶住浏览器的滚动锚定（它会在内容重排后把位置"恢复"回去）
   const resetRailScroll = useCallback(() => {
@@ -100,6 +104,8 @@ export default function App() {
         setActive(0);
         setSettingsOpen(false);
         setToast(null);
+        // 卡片条整体重建：新 DOM 没有滚动历史，必然从最左开始
+        setRailEpoch((n) => n + 1);
         // 卡片条回到最左。
         // 注意这里要连做三帧：面板刚 show 时容器尺寸还没稳定，浏览器又会按
         // "滚动锚定"把 scrollLeft 恢复到重排前的位置——只设一次会被它改回去，
@@ -898,7 +904,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="rail" ref={railRef}>
+            <div className="rail" key={railEpoch} ref={railRef}>
               {filtered.length === 0 ? (
                 <div className="rail-empty">
                   <div className="empty-title">{query ? `没有匹配「${query}」` : "还没有记录"}</div>
